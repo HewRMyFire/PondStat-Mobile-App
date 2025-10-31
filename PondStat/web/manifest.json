@@ -1,6 +1,6 @@
 {
-    "name": "sample",
-    "short_name": "sample",
+    "name": "pondstat",
+    "short_name": "pondstat",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
