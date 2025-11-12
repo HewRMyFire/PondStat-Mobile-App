@@ -1,4 +1,4 @@
-name: pondstat
+name: PondStat
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -35,8 +35,14 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+# ✅ Firebase dependencies
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+  firebase_storage: ^12.4.10
+  table_calendar: ^3.1.2
+
 dev_dependencies:
-  flutter_launcher_icons: ^0.14.1
   flutter_test:
     sdk: flutter
 
@@ -46,10 +52,6 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-flutter_icons:
-  android: true
-  ios: true
-  image_path: "wave_icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // --- THIS MAKES THE FILE RUNNABLE FOR TESTING ---
 void main() {
@@ -26,7 +27,6 @@ class _ProfileSheetTestHarness extends StatefulWidget {
 }
 
 class _ProfileSheetTestHarnessState extends State<_ProfileSheetTestHarness> {
-  // The test harness now holds the state
   bool _isTeamLeader = false;
 
   @override
@@ -44,9 +44,8 @@ class _ProfileSheetTestHarnessState extends State<_ProfileSheetTestHarness> {
               builder: (BuildContext context) {
                 return ProfileBottomSheet(
                   isTeamLeader: _isTeamLeader,
-                  assignedPond: null, // Always null in this test
+                  assignedPond: "Pond 1", // Replace with dynamic pond if needed
                   onRoleChanged: (isLeader) {
-                    // This is where the parent screen would update its state
                     setState(() {
                       _isTeamLeader = isLeader;
                     });
@@ -61,12 +60,13 @@ class _ProfileSheetTestHarnessState extends State<_ProfileSheetTestHarness> {
     );
   }
 }
+
 // ------------------------------------
 
 class ProfileBottomSheet extends StatefulWidget {
   final bool isTeamLeader;
-  final String? assignedPond; 
-  final Function(bool) onRoleChanged; 
+  final String? assignedPond;
+  final Function(bool) onRoleChanged;
 
   const ProfileBottomSheet({
     super.key,
@@ -80,18 +80,76 @@ class ProfileBottomSheet extends StatefulWidget {
 }
 
 class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
-  // --- THIS IS THE FIX ---
-  // 1. We create an internal state variable for the toggle.
   late bool _currentIsLeader;
 
   @override
   void initState() {
     super.initState();
-    // 2. We initialize the internal state with the value
-    //    passed from the parent screen.
     _currentIsLeader = widget.isTeamLeader;
   }
-  // -----------------------
+
+  // --- FIRESTORE UPDATE ---
+  Future<void> _updateTeamRole(bool isLeader) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final usersRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+    try {
+      // 1️⃣ Update the role in users collection
+      await usersRef.update({'role': isLeader ? 'leader' : 'member'});
+
+      // 2️⃣ Update the team document
+      if (widget.assignedPond == null) return;
+
+      final teamQuery = await FirebaseFirestore.instance
+          .collection('teams')
+          .where('teamName', isEqualTo: widget.assignedPond)
+          .limit(1)
+          .get();
+
+      if (teamQuery.docs.isEmpty) return;
+
+      final teamDoc = teamQuery.docs.first;
+      final teamRef = teamDoc.reference;
+      final teamData = teamDoc.data();
+
+      String? currentLeaderId = teamData['leaderId'];
+      List memberIds = List.from(teamData['memberIds'] ?? []);
+
+      if (isLeader) {
+        // Demote previous leader if exists
+        if (currentLeaderId != null && currentLeaderId != user.uid) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentLeaderId)
+              .update({'role': 'member'});
+          memberIds.add(currentLeaderId);
+        }
+        // Remove new leader from memberIds
+        memberIds.remove(user.uid);
+
+        await teamRef.update({
+          'leaderId': user.uid,
+          'memberIds': memberIds,
+        });
+      } else {
+        // Demote current user to member
+        memberIds.add(user.uid);
+        await teamRef.update({
+          'leaderId': null,
+          'memberIds': memberIds,
+        });
+      }
+
+      print('✅ Role updated successfully: $isLeader');
+    } catch (e) {
+      print('❌ Failed to update role: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update team role')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +182,7 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
             icon: Icons.edit_outlined,
             text: 'Edit Profile',
             onTap: () {
-              Navigator.pop(context); 
+              Navigator.pop(context);
               print("Edit Profile Tapped");
             },
           ),
@@ -132,11 +190,11 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
             icon: Icons.group_outlined,
             text: 'My Team',
             onTap: () {
-              Navigator.pop(context); 
+              Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content:
-                      Text('Please contact your team leader to be assigned to a pond.'),
+                  content: Text(
+                      'Please contact your team leader to be assigned to a pond.'),
                   backgroundColor: Colors.red,
                 ),
               );
@@ -161,12 +219,10 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
       children: [
         CircleAvatar(
           radius: 30,
-          // 1. THIS IS THE NEW BLUE BACKGROUND COLOR
           backgroundColor: const Color.fromARGB(255, 33, 130, 243),
           child: const Icon(
             Icons.person,
             size: 30,
-            // 2. THIS IS THE NEW WHITE ICON COLOR
             color: Colors.white,
           ),
         ),
@@ -213,13 +269,9 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
             contentPadding: EdgeInsets.zero,
             leading: CircleAvatar(
               radius: 20,
-              backgroundColor: _currentIsLeader 
-                  ? Theme.of(context).primaryColor 
-                  : Colors.grey, 
-              child: const Icon(
-                Icons.person, // <-- 1. CHANGED FROM shield_outlined
-                color: Colors.white
-              ),
+              backgroundColor:
+                  _currentIsLeader ? Theme.of(context).primaryColor : Colors.grey,
+              child: const Icon(Icons.person, color: Colors.white),
             ),
             title: Text(
               _currentIsLeader ? 'Team Leader' : 'Team Member',
@@ -230,11 +282,12 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
             ),
             trailing: Switch(
               value: _currentIsLeader,
-              onChanged: (newValue) {
+              onChanged: (newValue) async {
                 setState(() {
                   _currentIsLeader = newValue;
                 });
                 widget.onRoleChanged(newValue);
+                await _updateTeamRole(newValue);
               },
               activeColor: Theme.of(context).primaryColor,
             ),
@@ -249,10 +302,9 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
       ),
     );
   }
-  
+
   Widget _buildLeaderInfoBox(String text) {
-    // ... (This function is unchanged) ...
-     return Container(
+    return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFB3E5FC),
@@ -279,11 +331,9 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
     bool isSignOut = false,
     required VoidCallback onTap,
   }) {
-    // ... (This function is unchanged) ...
-     final Color color = isSignOut ? Colors.red[700]! : Colors.black87;
+    final Color color = isSignOut ? Colors.red[700]! : Colors.black87;
     final Color bgColor = isSignOut ? Colors.white : Colors.grey[100]!;
-    final Border? border =
-        isSignOut ? Border.all(color: Colors.red[300]!) : null;
+    final Border? border = isSignOut ? Border.all(color: Colors.red[300]!) : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),

@@ -1,198 +1,189 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'team_mgmt.dart';
 
-void main() {
-  runApp(const PondStatApp());
-}
-
-class PondStatApp extends StatelessWidget {
-  const PondStatApp({super.key});
+class LeaderDashboard extends StatefulWidget {
+  const LeaderDashboard({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PondStat',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const SelectPanelPage(),
-    );
-  }
+  State<LeaderDashboard> createState() => _LeaderDashboardState();
 }
 
-class SelectPanelPage extends StatefulWidget {
-  const SelectPanelPage({super.key});
-
-  @override
-  State<SelectPanelPage> createState() => _SelectPanelPageState();
-}
-
-class _SelectPanelPageState extends State<SelectPanelPage> {
+class _LeaderDashboardState extends State<LeaderDashboard> {
   String? selectedPanel;
+  String? currentUserAssignedPond;
+  String? userId;
+  List<String> assignedPonds = [];
+  bool isLoading = true;
+
+  final List<String> panels = ['Pond 1', 'Pond 2', 'Pond 3'];
+
+  @override
+  void initState() {
+    super.initState();
+    userId = FirebaseAuth.instance.currentUser?.uid;
+    _loadAssignedPonds();
+  }
+
+  /// Fixed: Safely load assigned ponds
+  Future<void> _loadAssignedPonds() async {
+    if (userId == null) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      // Get current user's assigned pond
+      final currentUserDoc =
+          await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      currentUserAssignedPond = currentUserDoc.data()?['assignedPond'] as String?;
+
+      // Get all assigned ponds of other leaders
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'leader')
+          .where('assignedPond', isNotEqualTo: null)
+          .get();
+
+      assignedPonds = snapshot.docs
+          .map((doc) => doc.data()['assignedPond'])
+          .whereType<String>() // ✅ ignores nulls
+          .where((pond) => pond != currentUserAssignedPond) // exclude current leader's pond
+          .toList();
+
+      // Preselect current pond if exists
+      if (currentUserAssignedPond != null) {
+        selectedPanel = currentUserAssignedPond;
+      }
+
+      setState(() => isLoading = false);
+    } catch (e) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading ponds: $e')),
+      );
+    }
+  }
+
+  Future<void> _confirmSelection() async {
+    if (userId == null || selectedPanel == null) return;
+
+    try {
+      // Update the current user's assigned pond
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({'assignedPond': selectedPanel});
+
+      currentUserAssignedPond = selectedPanel;
+
+      // Navigate to team management page
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TeamMgmt(
+            selectedPanel: selectedPanel!,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to select pond: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final panels = ['Pond 1', 'Pond 2', 'Pond 3'];
-
     return Scaffold(
       appBar: AppBar(
+        title: const Text('Leader Dashboard'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
-        title: Row(
-          children: [
-            const Icon(Icons.water_drop, color: Colors.white, size: 28),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'PondStat',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                ),
-                Text(
-                  'Leader Dashboard',
-                  style: TextStyle(fontSize: 12, color: Colors.white70),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white,
-              child: Icon(Icons.person, color: Colors.blue),
-            ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Profile tapped!')),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
-
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Header and description
-            const Text(
-              'Select Your Pond',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Choose an available pond to start data collection with your team.',
-              style: TextStyle(fontSize: 14, color: Colors.black54),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Panel cards with icons
-            ...panels.map((panel) {
-              final isSelected = selectedPanel == panel;
-              return GestureDetector(
-                onTap: () {
-                  setState(() => selectedPanel = panel);
-                },
-                child: Card(
-                  color: isSelected ? Colors.blue[100] : Colors.white,
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(
-                      color: isSelected ? Colors.blue : Colors.grey.shade300,
-                      width: 2,
-                    ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Select Your Pond',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.water_drop,
-                      color: isSelected ? Colors.blue[700] : Colors.grey[600],
-                      size: 30,
-                    ),
-                    title: Text(
-                      panel,
-                      style: TextStyle(
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected ? Colors.blue[900] : Colors.black87,
+                  const SizedBox(height: 8),
+                  ...panels.map((panel) {
+                    final isAssigned = assignedPonds.contains(panel);
+                    final isSelected = selectedPanel == panel;
+
+                    return GestureDetector(
+                      onTap: isAssigned
+                          ? null
+                          : () {
+                              setState(() => selectedPanel = panel);
+                            },
+                      child: Card(
+                        color: isSelected ? Colors.blue[100] : Colors.white,
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isSelected ? Colors.blue : Colors.grey.shade300,
+                            width: 2,
+                          ),
+                        ),
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.water_drop,
+                            color: isAssigned
+                                ? Colors.grey
+                                : isSelected
+                                    ? Colors.blue[700]
+                                    : Colors.grey[600],
+                            size: 30,
+                          ),
+                          title: Text(
+                            panel,
+                            style: TextStyle(
+                              fontWeight:
+                                  isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isAssigned
+                                  ? Colors.grey
+                                  : isSelected
+                                      ? Colors.blue[900]
+                                      : Colors.black87,
+                            ),
+                          ),
+                          trailing: isAssigned
+                              ? const Icon(Icons.lock, color: Colors.grey)
+                              : isSelected
+                                  ? const Icon(Icons.check_circle, color: Colors.blue)
+                                  : const Icon(Icons.arrow_forward_ios, size: 18),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                  const Spacer(),
+                  ElevatedButton(
+                    onPressed: selectedPanel == null ? null : _confirmSelection,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    trailing: isSelected
-                        ? const Icon(Icons.check_circle, color: Colors.blue)
-                        : const Icon(Icons.arrow_forward_ios, size: 18),
-                  ),
-                ),
-              );
-            }),
-
-            const Spacer(),
-
-            // Blue bordered text box
-            Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue, width: 1.5),
-                color: Colors.blue[50],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    "What happens next?",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.blue,
-                      fontWeight: FontWeight.bold,
+                    child: const Text(
+                      'Continue',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    "After selecting a pond, you'll be able to add your team members and start recording data.",
-                    style: TextStyle(fontSize: 14, color: Colors.blue),
                   ),
                 ],
               ),
             ),
-
-            // Continue button
-            ElevatedButton(
-              onPressed: selectedPanel == null
-                  ? null
-                  : () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              TeamMgmt(selectedPanel: selectedPanel!),
-                        ),
-                      );
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
-                'Continue',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

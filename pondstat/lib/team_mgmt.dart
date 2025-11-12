@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TeamMgmt extends StatefulWidget {
   final String selectedPanel;
@@ -36,7 +37,6 @@ class _TeamMgmtState extends State<TeamMgmt> {
     filteredStudents = List.from(allStudents);
   }
 
-  // 🔍 Filter suggestions as the user types
   void _filterSearch(String query) {
     if (query.isEmpty) {
       setState(() => showDropdown = false);
@@ -54,7 +54,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
   }
 
   // 📋 Select student from dropdown
-  void _selectStudent(String student) {
+  void _selectStudent(String student) async {
     setState(() {
       searchController.text = student;
       showDropdown = false;
@@ -63,9 +63,28 @@ class _TeamMgmtState extends State<TeamMgmt> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Selected: $student')),
     );
+
+    // ---------------- OPTION A ADDED ----------------
+    try {
+      // Assuming student number is used as UID
+      final studentNumber = student.split('-').last.trim();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(studentNumber) // replace with actual UID if you have
+          .update({'assignedPond': widget.selectedPanel});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$student assigned to ${widget.selectedPanel}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to assign $student: $e')),
+      );
+    }
+    // -------------------------------------------------
   }
 
-  // ⚠️ Confirmation overlay for removal
   void _confirmRemoval(String student) {
     showDialog(
       context: context,
@@ -139,7 +158,6 @@ class _TeamMgmtState extends State<TeamMgmt> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🔹 Search section
             Row(
               children: const [
                 Icon(Icons.search, color: Colors.blue),
@@ -155,8 +173,6 @@ class _TeamMgmtState extends State<TeamMgmt> {
               ],
             ),
             const SizedBox(height: 12),
-
-            // 🔍 Search bar + dropdown
             Stack(
               children: [
                 TextField(
@@ -177,8 +193,6 @@ class _TeamMgmtState extends State<TeamMgmt> {
                     ),
                   ),
                 ),
-
-                // ⬇️ Dropdown suggestions
                 if (showDropdown)
                   Positioned(
                     top: 60,
@@ -216,10 +230,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
                   ),
               ],
             ),
-
             const SizedBox(height: 24),
-
-            // 👥 Team Members section header
             Row(
               children: const [
                 Icon(Icons.group, color: Colors.blue),
@@ -234,10 +245,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
                 ),
               ],
             ),
-
             const SizedBox(height: 8),
-
-            // 🧾 Team member list
             Expanded(
               child: teamMembers.isEmpty
                   ? const Center(
@@ -257,8 +265,8 @@ class _TeamMgmtState extends State<TeamMgmt> {
                           elevation: 2,
                           margin: const EdgeInsets.symmetric(vertical: 6),
                           child: ListTile(
-                            leading: const Icon(Icons.person,
-                                color: Colors.blue),
+                            leading:
+                                const Icon(Icons.person, color: Colors.blue),
                             title: Text(student),
                             trailing: IconButton(
                               icon: const Icon(Icons.remove_circle_outline,
@@ -270,8 +278,6 @@ class _TeamMgmtState extends State<TeamMgmt> {
                       },
                     ),
             ),
-
-            // 🔵 Continue button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
