@@ -63,22 +63,22 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
       builder: (BuildContext context) {
         return ProfileBottomSheet(
           isTeamLeader: _isTeamLeader,
-          assignedPond: null, 
+          assignedPond: null,
           onRoleChanged: (isLeader) {
             // Update the state
             setState(() {
               _isTeamLeader = isLeader;
             });
-            
+
             if (isLeader) {
               // If the user just became a leader...
               // 1. Close the bottom sheet
-              Navigator.pop(context); 
+              Navigator.pop(context);
               // 2. Navigate to your existing SelectPanelPage
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const SelectPanelPage(),
+                  builder: (context) => const LeaderDashboard(),
                 ),
               );
             }
