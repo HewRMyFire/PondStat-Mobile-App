@@ -119,7 +119,7 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
 
       if (isLeader) {
         // Demote previous leader if exists
-        if (currentLeaderId != null && currentLeaderId != user.uid) {
+        if (currentLeaderId != user.uid) {
           await FirebaseFirestore.instance
               .collection('users')
               .doc(currentLeaderId)
@@ -289,7 +289,7 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
                 widget.onRoleChanged(newValue);
                 await _updateTeamRole(newValue);
               },
-              activeColor: Theme.of(context).primaryColor,
+              activeThumbColor: Theme.of(context).primaryColor,
             ),
           ),
           if (_currentIsLeader) ...[
