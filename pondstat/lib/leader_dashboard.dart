@@ -163,7 +163,7 @@ class _LeaderDashboardState extends State<LeaderDashboard> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
                   const Spacer(),
                   ElevatedButton(
                     onPressed: selectedPanel == null ? null : _confirmSelection,
