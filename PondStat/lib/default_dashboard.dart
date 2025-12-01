@@ -28,28 +28,7 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
         _isFirstTimeUser = false;
       });
     }
-    // Check if user document exists, if not create it
-    _ensureUserDocumentExists();
-  }
-
-  // 🔥 NEW FUNCTION: Creates user doc if missing
-  Future<void> _ensureUserDocumentExists() async {
-    if (currentUser == null) return;
-
-    final userRef = FirebaseFirestore.instance.collection('users').doc(currentUser!.uid);
-    final docSnapshot = await userRef.get();
-
-    if (!docSnapshot.exists) {
-      print("⚠️ User document missing. Creating default profile...");
-      await userRef.set({
-        'fullName': currentUser!.displayName ?? 'New User',
-        'email': currentUser!.email,
-        'studentNumber': 'Unknown', // You might want to prompt for this
-        'role': 'member', // Default role
-        'assignedPond': null,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
+    // Removed _ensureUserDocumentExists() call
   }
 
   void _showGettingStartedDialog(BuildContext context) {
@@ -100,18 +79,15 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        // If document doesn't exist (it's being created), show loading
+        // If document doesn't exist, sign out and redirect to login
         if (!snapshot.hasData || !snapshot.data!.exists) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            await FirebaseAuth.instance.signOut();
+          });
+
           return const Scaffold(
             body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text("Setting up your profile..."),
-                ],
-              ),
+              child: CircularProgressIndicator(),
             ),
           );
         }
