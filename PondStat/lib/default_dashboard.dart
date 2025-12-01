@@ -7,7 +7,6 @@ import 'profile_bottom_sheet.dart';
 import 'getting_started_dialog.dart';
 import 'leader_dashboard.dart';
 import 'data_monitoring.dart';
-import 'team_mgmt.dart'; // Added for direct access if needed
 
 class DefaultDashboardScreen extends StatefulWidget {
   const DefaultDashboardScreen({super.key});
@@ -18,16 +17,37 @@ class DefaultDashboardScreen extends StatefulWidget {
 
 class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
-  bool _isFirstTimeUser = true; // In a real app, check SharedPreferences
+  bool _isFirstTimeUser = true;
 
   @override
   void initState() {
     super.initState();
     if (_isFirstTimeUser) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Only show if we haven't seen it (mock logic for now)
-        // _showGettingStartedDialog(context);
-        _isFirstTimeUser = false; 
+        // _showGettingStartedDialog(context); // Uncomment if needed
+        _isFirstTimeUser = false;
+      });
+    }
+    // Check if user document exists, if not create it
+    _ensureUserDocumentExists();
+  }
+
+  // 🔥 NEW FUNCTION: Creates user doc if missing
+  Future<void> _ensureUserDocumentExists() async {
+    if (currentUser == null) return;
+
+    final userRef = FirebaseFirestore.instance.collection('users').doc(currentUser!.uid);
+    final docSnapshot = await userRef.get();
+
+    if (!docSnapshot.exists) {
+      print("⚠️ User document missing. Creating default profile...");
+      await userRef.set({
+        'fullName': currentUser!.displayName ?? 'New User',
+        'email': currentUser!.email,
+        'studentNumber': 'Unknown', // You might want to prompt for this
+        'role': 'member', // Default role
+        'assignedPond': null,
+        'createdAt': FieldValue.serverTimestamp(),
       });
     }
   }
@@ -52,8 +72,7 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
           isTeamLeader: userData?['role'] == 'leader',
           assignedPond: userData?['assignedPond'],
           onRoleChanged: (isLeader) {
-            // Role update is handled inside ProfileBottomSheet via Firestore
-            // The StreamBuilder below will auto-refresh the UI
+            // UI updates automatically via StreamBuilder
           },
         );
       },
@@ -66,7 +85,6 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
       return const Scaffold(body: Center(child: Text("Not logged in")));
     }
 
-    // Listen to the current user's document for role/pond changes
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
           .collection('users')
@@ -74,14 +92,28 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Scaffold(body: Center(child: Text("Error: ${snapshot.error}")));
+          return const Scaffold(body: Center(child: Text("Something went wrong")));
         }
+        
+        // Show loading while waiting for initial data
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
+        // If document doesn't exist (it's being created), show loading
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Scaffold(body: Center(child: Text("User data not found.")));
+          return const Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text("Setting up your profile..."),
+                ],
+              ),
+            ),
+          );
         }
 
         final userData = snapshot.data!.data() as Map<String, dynamic>;
@@ -92,85 +124,76 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
         Widget bodyWidget;
         String appBarTitle = 'Dashboard';
 
-        // --- ROUTING LOGIC ---
+        // --- LOGIC TO SWITCH PAGES BASED ON ROLE/POND ---
         if (role == 'leader') {
           if (assignedPond == null || assignedPond.isEmpty) {
-            // Leader needs to select a pond
             bodyWidget = const LeaderDashboard(); 
             appBarTitle = 'Select Pond';
           } else {
-            // Leader has a pond -> Show Monitoring (with Admin features)
-            // Or we could show TeamMgmt as the "Home" for leaders?
-            // For now, let's show Monitoring, but add a button to go to Team Mgmt
             bodyWidget = MonitoringPage(
               pondLetter: assignedPond,
-              leaderName: fullName, // Self is leader
+              leaderName: fullName,
               isLeader: true,
             );
             appBarTitle = '$assignedPond (Leader)';
           }
         } else {
-          // Member
           if (assignedPond == null || assignedPond.isEmpty) {
             bodyWidget = const NoPondAssignedWidget();
             appBarTitle = 'PondStat';
           } else {
-            // Member has pond -> Show Monitoring (Read/Write)
             bodyWidget = MonitoringPage(
               pondLetter: assignedPond,
-              leaderName: "Team Leader", // We could fetch leader name if needed
+              leaderName: "Team Leader", // Ideally fetch leader name
               isLeader: false,
             );
             appBarTitle = assignedPond;
           }
         }
 
+        // If the body is a page that has its own Scaffold, return it directly
+        if (bodyWidget is MonitoringPage || bodyWidget is LeaderDashboard) {
+          return bodyWidget;
+        }
+
+        // Otherwise, wrap in your standard Dashboard Scaffold
         return Scaffold(
           backgroundColor: Colors.white,
-          // Only show the shared AppBar if the child widget isn't providing its own
-          // (MonitoringPage and LeaderDashboard usually have their own, but let's standardize)
-          // For simplicity here, we'll wrap the body. 
-          // Note: MonitoringPage has its own Scaffold/AppBar, so we might return it directly.
-          
-          body: (bodyWidget is MonitoringPage || bodyWidget is LeaderDashboard) 
-              ? bodyWidget // These pages have their own scaffolds
-              : Scaffold(
-                  appBar: AppBar(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    title: Row(
-                      children: [
-                        const Icon(Icons.water_drop, color: Colors.white, size: 28),
-                        const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'PondStat',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                            ),
-                            Text(
-                              appBarTitle,
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
-                            ),
-                          ],
-                        ),
-                      ],
+          appBar: AppBar(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+            title: Row(
+              children: [
+                const Icon(Icons.water_drop, color: Colors.white, size: 28),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PondStat',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                     ),
-                    actions: [
-                      IconButton(
-                        icon: const CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.white,
-                          child: Icon(Icons.person, color: Colors.blue),
-                        ),
-                        onPressed: () => _showProfileSheet(context, userData),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                  ),
-                  body: bodyWidget,
+                    Text(
+                      appBarTitle,
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                  ],
                 ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                icon: const CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, color: Colors.blue),
+                ),
+                onPressed: () => _showProfileSheet(context, userData),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          body: bodyWidget,
         );
       },
     );
