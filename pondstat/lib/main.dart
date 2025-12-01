@@ -10,8 +10,6 @@ import 'default_dashboard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Firebase
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -20,7 +18,6 @@ void main() async {
   } catch (e) {
     print("❌ Firebase connection failed: $e");
   }
-
   runApp(const MyApp());
 }
 
@@ -35,6 +32,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.light,
         primarySwatch: Colors.blue,
+        // ... (keep your existing theme settings)
         primaryColor: const Color(0xFF1A73E8),
         scaffoldBackgroundColor: Colors.white,
         inputDecorationTheme: InputDecorationTheme(
@@ -71,31 +69,41 @@ class MyApp extends StatelessWidget {
               displayColor: Colors.black,
             ),
       ),
-      // Check authentication state to decide the initial screen
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const LoadingOverlay();
-          }
-          if (snapshot.hasData) {
-            return const DefaultDashboardScreen();
-          }
-          return const AuthPage();
-        },
-      ),
+      home: const AuthWrapper(), // USE THE WRAPPER HERE
+    );
+  }
+}
+
+// --- NEW AUTH WRAPPER WIDGET ---
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingOverlay();
+        }
+        if (snapshot.hasData) {
+          return const DefaultDashboardScreen();
+        }
+        return const AuthPage();
+      },
     );
   }
 }
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
-
+  // ... (Keep existing AuthPage implementation exactly as is)
   @override
   State<AuthPage> createState() => _AuthPageState();
 }
 
 class _AuthPageState extends State<AuthPage> {
+  // ... (Keep existing logic)
   bool _showLoginPage = true;
   bool _isLoading = false;
 
@@ -118,8 +126,6 @@ class _AuthPageState extends State<AuthPage> {
         password: password,
       );
       print("✅ Login successful!");
-
-      // Navigation is handled by the StreamBuilder in MyApp
     } on FirebaseAuthException catch (e) {
       print("❌ Login failed: $e");
       if (mounted) {
@@ -152,7 +158,7 @@ class _AuthPageState extends State<AuthPage> {
           'fullName': fullName,
           'studentNumber': studentNumber,
           'role': 'member',
-          'assignedPond': null, // Make sure field name matches other files
+          'assignedPond': null,
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
@@ -162,7 +168,6 @@ class _AuthPageState extends State<AuthPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Account created successfully!')),
         );
-        // Switch to login page or let auth state change handle navigation if you want auto-login after signup
          setState(() => _showLoginPage = true);
       }
     } on FirebaseAuthException catch (e) {

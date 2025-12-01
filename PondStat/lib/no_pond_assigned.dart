@@ -1,48 +1,5 @@
 import 'package:flutter/material.dart';
 
-// --- THIS MAKES THE FILE RUNNABLE FOR TESTING ---
-void main() {
-  runApp(
-    MaterialApp(
-      title: 'PondStat (Test)',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0A7ABF)),
-        scaffoldBackgroundColor: Colors.white, // Changed background to white
-        useMaterial3: true,
-      ),
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        // This is the "top part" for testing
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF0A7ABF),
-          foregroundColor: Colors.white,
-          title: Row(
-            children: [
-              const Icon(Icons.waves),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('PondStat', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text('Dashboard', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.8))),
-                ],
-              ),
-            ],
-          ),
-          actions: const [
-            Padding(
-              padding: EdgeInsets.only(right: 16.0),
-              child: Icon(Icons.person_outline, size: 30),
-            ),
-          ],
-        ),
-        body: const NoPondAssignedWidget(),
-      ),
-    ),
-  );
-}
-// ------------------------------------
-
 class NoPondAssignedWidget extends StatelessWidget {
   const NoPondAssignedWidget({super.key});
 

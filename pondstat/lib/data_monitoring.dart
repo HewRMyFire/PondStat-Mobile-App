@@ -3,7 +3,9 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart'; 
-import 'team_mgmt.dart'; 
+import 'main.dart';
+import 'default_dashboard.dart'; 
+import 'profile_bottom_sheet.dart'; 
 
 class MonitoringPage extends StatefulWidget {
   final String pondLetter;
@@ -67,12 +69,39 @@ class _MonitoringPageState extends State<MonitoringPage>
     super.dispose();
   }
 
+  // --- Profile Sheet Logic ---
+  // --- Profile Sheet Logic ---
+  void _showProfileSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return ProfileBottomSheet(
+          isTeamLeader: widget.isLeader,
+          assignedPond: widget.pondLetter,
+          onRoleChanged: (isLeader) {
+            // Close the sheet
+            Navigator.pop(context);
+            // Navigate back to AuthWrapper to restore the Auth Listener
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const AuthWrapper()), // CHANGE THIS
+              (route) => false,
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _saveDataToFirestore({
     required String label,
     required String unit,
     required String timeString,
     required double averageValue,
     required String type,
+    required Map<String, double> pointValues,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _selectedDay == null) return;
@@ -91,6 +120,7 @@ class _MonitoringPageState extends State<MonitoringPage>
       'value': averageValue,
       'unit': unit,
       'timeString': timeString,
+      'pointValues': pointValues,
     });
   }
 
@@ -209,11 +239,14 @@ class _MonitoringPageState extends State<MonitoringPage>
                 onPressed: () {
                   double sum = 0;
                   int count = 0;
+                  Map<String, double> pointValues = {};
+
                   for (var p in points) {
                     final val = double.tryParse(valueControllers[p]!.text);
                     if (val != null) {
                       sum += val;
                       count++;
+                      pointValues[p] = val;
                     }
                   }
 
@@ -237,6 +270,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                     timeString: selectedTime!.format(context),
                     averageValue: avg,
                     type: type,
+                    pointValues: pointValues,
                   ).then((_) {
                     if (mounted) {
                       Navigator.pop(context);
@@ -256,6 +290,134 @@ class _MonitoringPageState extends State<MonitoringPage>
               )
             ],
           ),
+        );
+      },
+    );
+  }
+
+  // --- UPDATED: Edit Dialog now edits individual Points ---
+  void _showEditDataDialog(List<QueryDocumentSnapshot> docs) {
+    // Nested map to store controllers: { 'docID': { 'A': Controller, 'B': Controller... } }
+    final Map<String, Map<String, TextEditingController>> groupControllers = {};
+    final List<String> points = const ['A', 'B', 'C', 'D'];
+
+    for (var doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final pointValues = data['pointValues'] as Map<String, dynamic>? ?? {};
+
+      groupControllers[doc.id] = {};
+
+      for (var p in points) {
+        // Pre-fill if value exists, otherwise empty
+        String initialValue = pointValues[p]?.toString() ?? '';
+        groupControllers[doc.id]![p] = TextEditingController(text: initialValue);
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          scrollable: true,
+          title: const Text('Edit Point Values'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final String label = data['parameter'];
+              final String unit = data['unit'] ?? '';
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("$label ($unit)", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                  const SizedBox(height: 8),
+                  // Grid of 4 inputs for A, B, C, D
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: points.map((p) {
+                      return SizedBox(
+                        width: 60,
+                        child: TextField(
+                          controller: groupControllers[doc.id]![p],
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            labelText: p,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const Divider(height: 24),
+                ],
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  for (var doc in docs) {
+                    final controllersMap = groupControllers[doc.id];
+                    if (controllersMap == null) continue;
+
+                    double sum = 0;
+                    int count = 0;
+                    Map<String, double> newPointValues = {};
+
+                    // 1. Gather new values from inputs
+                    for (var p in points) {
+                      final text = controllersMap[p]?.text;
+                      if (text != null && text.isNotEmpty) {
+                        final val = double.tryParse(text);
+                        if (val != null) {
+                          sum += val;
+                          count++;
+                          newPointValues[p] = val;
+                        }
+                      }
+                    }
+
+                    if (count > 0) {
+                      // 2. Calculate new Average
+                      double newAvg = sum / count;
+                      newAvg = double.parse(newAvg.toStringAsFixed(2));
+
+                      // 3. Update Firestore
+                      await doc.reference.update({
+                        'pointValues': newPointValues,
+                        'value': newAvg,
+                      });
+                    }
+                  }
+                  
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Points updated & Average recalculated")),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Error updating: $e")),
+                    );
+                  }
+                }
+              },
+              child: const Text("Update"),
+            ),
+          ],
         );
       },
     );
@@ -321,14 +483,12 @@ class _MonitoringPageState extends State<MonitoringPage>
 
   @override
   Widget build(BuildContext context) {
-    // Define the custom blue color from the image
     const Color customBlue = Color(0xFF0077C2); 
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 1. Blue Background Header
           Container(
             height: 200, 
             decoration: const BoxDecoration(
@@ -344,12 +504,10 @@ class _MonitoringPageState extends State<MonitoringPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 2. Custom Top Bar (Logo, Title, Profile)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
                   child: Row(
                     children: [
-                      // Logo Icon
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
@@ -359,7 +517,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                         child: const Icon(Icons.waves, color: Colors.white, size: 24),
                       ),
                       const SizedBox(width: 12),
-                      // Title Text
+                      
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: const [
@@ -381,31 +539,15 @@ class _MonitoringPageState extends State<MonitoringPage>
                         ],
                       ),
                       const Spacer(),
-                      // Profile / Team Mgmt Icon
+                      
                       GestureDetector(
-                        onTap: () {
-                          // If leader, go to team mgmt
-                          if (widget.isLeader) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => TeamMgmt(selectedPanel: widget.pondLetter),
-                              ),
-                            );
-                          } else {
-                            // Show simple profile dialog or nothing for members
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Profile settings")),
-                            );
-                          }
-                        },
+                        onTap: () => _showProfileSheet(context),
                         child: const Icon(Icons.person_outline, color: Colors.white, size: 30),
                       ),
                     ],
                   ),
                 ),
 
-                // 3. "Monitoring" Info Section (Darker overlay look)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 5),
                   child: Container(
@@ -433,14 +575,12 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                 const SizedBox(height: 15),
 
-                // 4. Scrollable Content (Calendar Card + Data List)
                 Expanded(
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
                       child: Column(
                         children: [
-                          // --- Calendar Card ---
                           Card(
                             elevation: 4,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -460,7 +600,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                                     ),
                                     calendarStyle: const CalendarStyle(
                                       selectedDecoration: BoxDecoration(
-                                        color: customBlue, // Matches theme
+                                        color: customBlue,
                                         shape: BoxShape.circle,
                                       ),
                                       todayDecoration: BoxDecoration(
@@ -478,7 +618,6 @@ class _MonitoringPageState extends State<MonitoringPage>
                                     },
                                   ),
                                   const Divider(),
-                                  // "Dates with records" Legend
                                   Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
                                     child: Row(
@@ -499,8 +638,6 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                           const SizedBox(height: 20),
 
-                          // --- Tabs & Data List (Retained Functionality) ---
-                          // We put the TabBar inside a container to give it some style
                           Container(
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
@@ -525,9 +662,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                           
                           const SizedBox(height: 10),
 
-                          // The view showing the actual data cards
                           SizedBox(
-                            height: 400, // Fixed height for the list area
+                            height: 400, 
                             child: TabBarView(
                               controller: _tabController,
                               children: [
@@ -547,7 +683,6 @@ class _MonitoringPageState extends State<MonitoringPage>
           ),
         ],
       ),
-      // 5. Floating Action Button for Adding Data
       floatingActionButton: FloatingActionButton(
         backgroundColor: customBlue,
         shape: const CircleBorder(),
@@ -557,7 +692,6 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
-  // 🔄 Generic StreamBuilder to fetch data for any tab type
   Widget _buildStreamTab(String type) {
     if (_selectedDay == null) {
       return const Center(child: Text("Select a date to view data"));
@@ -638,9 +772,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                   IconButton(
                     icon: const Icon(Icons.edit, color: Colors.blue),
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Edit not implemented yet")),
-                      );
+                      _showEditDataDialog(groupDocs); 
                     },
                   ),
                   if (widget.isLeader)
