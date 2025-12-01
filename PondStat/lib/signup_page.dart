@@ -54,7 +54,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 TextFormField(
                   controller: _studentNumberController,
                   decoration: const InputDecoration(
-                    hintText: 'e.g., 2024-09454',
+                    hintText: 'e.g., 202409454',
                   ),
                   keyboardType: TextInputType.text,
                 ),

@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'team_mgmt.dart';
+import 'package:intl/intl.dart'; 
+import 'team_mgmt.dart'; 
 
 class MonitoringPage extends StatefulWidget {
-  final String pondLetter; // e.g., "Pond 1"
+  final String pondLetter;
   final String leaderName;
-  final bool isLeader;
+  final bool isLeader; 
 
   const MonitoringPage({
     super.key,
@@ -23,27 +24,34 @@ class MonitoringPage extends StatefulWidget {
 class _MonitoringPageState extends State<MonitoringPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
-  // Parameters definitions
+  // --- Parameter Definitions ---
   final List<Map<String, dynamic>> _dailyParameters = const [
-    {'label': 'Water Temperature', 'icon': Icons.thermostat, 'unit': '°C', 'keyboardType': TextInputType.number},
-    {'label': 'Air Temperature', 'icon': Icons.air, 'unit': '°C', 'keyboardType': TextInputType.number},
-    {'label': 'pH Level', 'icon': Icons.science, 'unit': '', 'keyboardType': TextInputType.number},
-    {'label': 'Salinity', 'icon': Icons.waves, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Feeding', 'icon': Icons.restaurant, 'unit': 'kg', 'keyboardType': TextInputType.number},
+    {'label': 'Water Temperature', 'icon': Icons.thermostat_outlined, 'unit': '°C', 'keyboardType': TextInputType.number},
+    {'label': 'Air Temperature', 'icon': Icons.air_outlined, 'unit': '°C', 'keyboardType': TextInputType.number},
+    {'label': 'pH Level', 'icon': Icons.science_outlined, 'unit': '', 'keyboardType': TextInputType.number},
+    {'label': 'Salinity', 'icon': Icons.waves_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Feeding Time', 'icon': Icons.local_dining_outlined, 'unit': 'kg', 'keyboardType': TextInputType.number},
   ];
 
-  // (Keeping Weekly and Biweekly lists abbreviated for brevity, logic is identical)
   final List<Map<String, dynamic>> _weeklyParameters = const [
-    {'label': 'Microbe Count', 'icon': Icons.bug_report, 'unit': 'cells/ml', 'keyboardType': TextInputType.number},
-    {'label': 'Avg Body Weight', 'icon': Icons.scale, 'unit': 'g', 'keyboardType': TextInputType.number},
+    {'label': 'Microbe Count', 'icon': Icons.mic_outlined, 'unit': 'cells/ml', 'keyboardType': TextInputType.number},
+    {'label': 'Phytoplankton Count', 'icon': Icons.nature_outlined, 'unit': 'cells/ml', 'keyboardType': TextInputType.number},
+    {'label': 'Zooplankton Count', 'icon': Icons.pets_outlined, 'unit': 'ind/L', 'keyboardType': TextInputType.number},
+    {'label': 'Avg Body Weight', 'icon': Icons.fitness_center_outlined, 'unit': 'g', 'keyboardType': TextInputType.number},
   ];
 
   final List<Map<String, dynamic>> _biweeklyParameters = const [
-    {'label': 'Dissolved O2', 'icon': Icons.water, 'unit': 'mg/L', 'keyboardType': TextInputType.number},
-    {'label': 'Ammonia', 'icon': Icons.warning, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Dissolved O2', 'icon': Icons.opacity_outlined, 'unit': 'mg/L', 'keyboardType': TextInputType.number},
+    {'label': 'Ammonia', 'icon': Icons.warning_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Nitrate', 'icon': Icons.water_drop_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Nitrite', 'icon': Icons.water_drop_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Alkalinity', 'icon': Icons.balance_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Phosphate', 'icon': Icons.data_usage_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
+    {'label': 'Ca-Mg Ratio', 'icon': Icons.ac_unit_outlined, 'unit': 'ratio', 'keyboardType': TextInputType.text},
   ];
 
   @override
@@ -53,164 +61,508 @@ class _MonitoringPageState extends State<MonitoringPage>
     _selectedDay = _focusedDay;
   }
 
-  // 🔥 SAVE DATA TO FIRESTORE
-  void _saveMeasurement(String label, String value, String unit, String type) async {
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveDataToFirestore({
+    required String label,
+    required String unit,
+    required String timeString,
+    required double averageValue,
+    required String type,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null || _selectedDay == null) return;
 
-    if (_selectedDay == null) return;
-
-    // Normalize date to YYYY-MM-DD string for easier querying
     final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
-    try {
-      await FirebaseFirestore.instance.collection('measurements').add({
-        'pond': widget.pondLetter,
-        'dateKey': dateKey,
-        'timestamp': Timestamp.fromDate(_selectedDay!), // The logical date of record
-        'recordedAt': FieldValue.serverTimestamp(), // When it was actually typed
-        'recordedBy': user.uid,
-        'recorderName': user.displayName ?? 'Unknown',
-        'type': type, // 'daily', 'weekly', 'biweekly'
-        'parameter': label,
-        'value': double.tryParse(value) ?? 0.0,
-        'unit': unit,
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data Saved!')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
+    await FirebaseFirestore.instance.collection('measurements').add({
+      'pond': widget.pondLetter,
+      'dateKey': dateKey,
+      'timestamp': Timestamp.fromDate(_selectedDay!),
+      'recordedAt': FieldValue.serverTimestamp(),
+      'recordedBy': user.uid,
+      'recorderName': user.displayName ?? 'Unknown',
+      'type': type,
+      'parameter': label,
+      'value': averageValue,
+      'unit': unit,
+      'timeString': timeString,
+    });
   }
+
+  // --- UI Methods ---
 
   void _showAddDataOverlay() {
     if (_selectedDay == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select a date first.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a day on the calendar first.')),
+      );
       return;
     }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text("Add ${_getTabTitle(_tabController.index)} Data", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const Divider(),
-            _buildParameterGrid(_tabController.index),
-          ],
-        ),
-      ),
+      builder: (BuildContext context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            top: 20,
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Add Data for ${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}",
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "Select Parameter for ${_getTabTitle(_tabController.index)}",
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const Divider(),
+                _buildOverlayContent(_tabController.index),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
-  String _getTabTitle(int index) => ["Daily", "Weekly", "Biweekly"][index];
+  void _showParameterInputOverlay(Map<String, dynamic> parameter) {
+    Navigator.pop(context);
 
-  Widget _buildParameterGrid(int index) {
-    List<Map<String, dynamic>> params = index == 0 ? _dailyParameters : (index == 1 ? _weeklyParameters : _biweeklyParameters);
-    String type = index == 0 ? 'daily' : (index == 1 ? 'weekly' : 'biweekly');
+    final String label = parameter['label'];
+    final String unit = parameter['unit'];
+    final TextInputType keyboardType = parameter['keyboardType'];
+    final List<String> points = const ['A', 'B', 'C', 'D'];
+    final String dateString = "${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}";
 
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: params.map((p) => ActionChip(
-        avatar: Icon(p['icon'] as IconData, size: 16),
-        label: Text(p['label']),
-        onPressed: () => _showInputDialog(p, type),
-      )).toList(),
-    );
-  }
+    TimeOfDay? selectedTime = TimeOfDay.now();
+    Map<String, TextEditingController> valueControllers = {
+      for (var p in points) p: TextEditingController()
+    };
 
-  void _showInputDialog(Map<String, dynamic> param, String type) {
-    Navigator.pop(context); // Close bottom sheet
-    final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text("Enter ${param['label']}"),
-        content: TextField(
-          controller: controller,
-          keyboardType: param['keyboardType'],
-          decoration: InputDecoration(labelText: "Value in ${param['unit']}"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _saveMeasurement(param['label'], controller.text, param['unit'], type);
-            },
-            child: const Text("Save"),
-          )
-        ],
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            scrollable: true,
+            title: Text('Record $label ${unit.isNotEmpty ? "($unit)" : ""}'),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Date: $dateString"),
+                const Divider(),
+                TextButton(
+                  onPressed: () async {
+                    final TimeOfDay? picked = await showTimePicker(
+                      context: context,
+                      initialTime: selectedTime ?? TimeOfDay.now(),
+                    );
+                    if (picked != null) {
+                      setState(() => selectedTime = picked);
+                    }
+                  },
+                  child: Text(selectedTime != null
+                      ? "Selected Time: ${selectedTime!.format(context)}"
+                      : "Select Time"),
+                ),
+                const SizedBox(height: 10),
+                Column(
+                  children: points.map((p) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: TextField(
+                        controller: valueControllers[p],
+                        keyboardType: keyboardType,
+                        decoration: InputDecoration(
+                          labelText: "Point $p Value ($unit)",
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                )
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  double sum = 0;
+                  int count = 0;
+                  for (var p in points) {
+                    final val = double.tryParse(valueControllers[p]!.text);
+                    if (val != null) {
+                      sum += val;
+                      count++;
+                    }
+                  }
+
+                  if (count == 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Please enter at least one value")),
+                    );
+                    return;
+                  }
+
+                  double avg = sum / count;
+                  avg = double.parse(avg.toStringAsFixed(2));
+
+                  String type = 'daily';
+                  if (_tabController.index == 1) type = 'weekly';
+                  if (_tabController.index == 2) type = 'biweekly';
+
+                  _saveDataToFirestore(
+                    label: label,
+                    unit: unit,
+                    timeString: selectedTime!.format(context),
+                    averageValue: avg,
+                    type: type,
+                  ).then((_) {
+                    if (mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Saved $label: $avg $unit")),
+                      );
+                    }
+                  }).catchError((error) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Failed to save: $error")),
+                      );
+                    }
+                  });
+                },
+                child: const Text("Save"),
+              )
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _getTabTitle(int index) {
+    switch (index) {
+      case 0: return "Daily Monitoring";
+      case 1: return "Weekly Analysis";
+      case 2: return "Biweekly Report";
+      default: return "";
+    }
+  }
+
+  Widget _buildOverlayContent(int index) {
+    List<Map<String, dynamic>> parameters;
+    switch (index) {
+      case 0: parameters = _dailyParameters; break;
+      case 1: parameters = _weeklyParameters; break;
+      case 2: parameters = _biweeklyParameters; break;
+      default: return const Text("Select a tab to add data.");
+    }
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 3.5,
       ),
+      itemCount: parameters.length,
+      itemBuilder: (context, i) {
+        final param = parameters[i];
+        return InkWell(
+          onTap: () => _showParameterInputOverlay(param),
+          child: Card(
+            elevation: 2,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Row(
+                  children: [
+                    Icon(param['icon'] as IconData, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        param['label'] as String,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Define the custom blue color from the image
+    const Color customBlue = Color(0xFF0077C2); 
+
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.pondLetter, style: const TextStyle(fontSize: 16)),
-            Text("Leader: ${widget.leaderName}", style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-        actions: [
-          // If Leader, show Manage Team button
-          if (widget.isLeader)
-            IconButton(
-              icon: const Icon(Icons.people),
-              tooltip: "Manage Team",
-              onPressed: () {
-                Navigator.push(
-                  context, 
-                  MaterialPageRoute(builder: (_) => TeamMgmt(selectedPanel: widget.pondLetter))
-                );
-              },
-            ),
-          IconButton(icon: const Icon(Icons.add), onPressed: _showAddDataOverlay),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [Tab(text: "Daily"), Tab(text: "Weekly"), Tab(text: "Biweekly")],
-        ),
-      ),
-      body: Column(
+      backgroundColor: Colors.white,
+      body: Stack(
         children: [
-          TableCalendar(
-            firstDay: DateTime.utc(2023, 1, 1),
-            lastDay: DateTime.utc(2030, 12, 31),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            onDaySelected: (selected, focused) => setState(() {
-              _selectedDay = selected;
-              _focusedDay = focused;
-            }),
-            calendarFormat: CalendarFormat.twoWeeks,
+          // 1. Blue Background Header
+          Container(
+            height: 200, 
+            decoration: const BoxDecoration(
+              color: customBlue,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+              ),
+            ),
           ),
-          const Divider(),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
+
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDataList('daily'),
-                _buildDataList('weekly'),
-                _buildDataList('biweekly'),
+                // 2. Custom Top Bar (Logo, Title, Profile)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+                  child: Row(
+                    children: [
+                      // Logo Icon
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.waves, color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      // Title Text
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            "PondStat",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            "Pond Parameters",
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      // Profile / Team Mgmt Icon
+                      GestureDetector(
+                        onTap: () {
+                          // If leader, go to team mgmt
+                          if (widget.isLeader) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TeamMgmt(selectedPanel: widget.pondLetter),
+                              ),
+                            );
+                          } else {
+                            // Show simple profile dialog or nothing for members
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Profile settings")),
+                            );
+                          }
+                        },
+                        child: const Icon(Icons.person_outline, color: Colors.white, size: 30),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 3. "Monitoring" Info Section (Darker overlay look)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 5),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Monitoring",
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Pond ${widget.pondLetter} - ${widget.leaderName}'s Team",
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                // 4. Scrollable Content (Calendar Card + Data List)
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Column(
+                        children: [
+                          // --- Calendar Card ---
+                          Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Column(
+                                children: [
+                                  TableCalendar(
+                                    firstDay: DateTime.utc(2020, 1, 1),
+                                    lastDay: DateTime.utc(2030, 12, 31),
+                                    focusedDay: _focusedDay,
+                                    availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+                                    headerStyle: const HeaderStyle(
+                                      titleCentered: false,
+                                      formatButtonVisible: false,
+                                      titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                    calendarStyle: const CalendarStyle(
+                                      selectedDecoration: BoxDecoration(
+                                        color: customBlue, // Matches theme
+                                        shape: BoxShape.circle,
+                                      ),
+                                      todayDecoration: BoxDecoration(
+                                        color: Colors.blueAccent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                                    onDaySelected: (selectedDay, focusedDay) {
+                                      setState(() {
+                                        _selectedDay = DateTime.utc(
+                                            selectedDay.year, selectedDay.month, selectedDay.day);
+                                        _focusedDay = focusedDay;
+                                      });
+                                    },
+                                  ),
+                                  const Divider(),
+                                  // "Dates with records" Legend
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                                    child: Row(
+                                      children: const [
+                                        Icon(Icons.circle, color: Colors.blueAccent, size: 12),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          "Dates with records",
+                                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // --- Tabs & Data List (Retained Functionality) ---
+                          // We put the TabBar inside a container to give it some style
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(25),
+                            ),
+                            child: TabBar(
+                              controller: _tabController,
+                              indicator: BoxDecoration(
+                                color: customBlue,
+                                borderRadius: BorderRadius.circular(25),
+                              ),
+                              labelColor: Colors.white,
+                              unselectedLabelColor: Colors.grey,
+                              dividerColor: Colors.transparent,
+                              tabs: const [
+                                Tab(text: "Daily"),
+                                Tab(text: "Weekly"),
+                                Tab(text: "Biweekly"),
+                              ],
+                            ),
+                          ),
+                          
+                          const SizedBox(height: 10),
+
+                          // The view showing the actual data cards
+                          SizedBox(
+                            height: 400, // Fixed height for the list area
+                            child: TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildStreamTab('daily'),
+                                _buildStreamTab('weekly'),
+                                _buildStreamTab('biweekly'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
+      // 5. Floating Action Button for Adding Data
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: customBlue,
+        shape: const CircleBorder(),
+        onPressed: _showAddDataOverlay,
+        child: const Icon(Icons.add, color: Colors.white, size: 30),
+      ),
     );
   }
 
-  // 🔥 FETCH AND DISPLAY DATA
-  Widget _buildDataList(String type) {
-    if (_selectedDay == null) return const Center(child: Text("Select a date"));
+  // 🔄 Generic StreamBuilder to fetch data for any tab type
+  Widget _buildStreamTab(String type) {
+    if (_selectedDay == null) {
+      return const Center(child: Text("Select a date to view data"));
+    }
+
     final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     return StreamBuilder<QuerySnapshot>(
@@ -222,26 +574,115 @@ class _MonitoringPageState extends State<MonitoringPage>
           .orderBy('recordedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        if (snapshot.data!.docs.isEmpty) return Center(child: Text("No $type data for this date"));
+        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
 
-        return ListView(
-          children: snapshot.data!.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return ListTile(
-              leading: const Icon(Icons.analytics, color: Colors.blue),
-              title: Text("${data['parameter']}: ${data['value']} ${data['unit']}"),
-              subtitle: Text("Recorded by: ${data['recorderName']}"),
-              trailing: widget.isLeader 
-                ? IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () => doc.reference.delete(),
-                  )
-                : null,
-            );
-          }).toList(),
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return Center(child: Text("No $type data for this date."));
+
+        final Map<String, List<QueryDocumentSnapshot>> groupedData = {};
+        for (var doc in docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final time = data['timeString'] ?? 'Unknown Time';
+          if (!groupedData.containsKey(time)) {
+            groupedData[time] = [];
+          }
+          groupedData[time]!.add(doc);
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            children: groupedData.entries.map((entry) {
+              final time = entry.key;
+              final groupDocs = entry.value;
+
+              String content = groupDocs.map((doc) {
+                final d = doc.data() as Map<String, dynamic>;
+                return "${d['parameter']}: ${d['value']}${d['unit']}";
+              }).join('\n'); 
+              
+              content += "\n(Avg across Points A, B, C, D)";
+
+              return _infoCard(time, content, groupDocs);
+            }).toList(),
+          ),
         );
       },
+    );
+  }
+
+  Widget _infoCard(String title, String content, List<QueryDocumentSnapshot> groupDocs) {
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        elevation: 2,
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 8),
+                    Text(content, style: const TextStyle(fontSize: 14)),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Edit not implemented yet")),
+                      );
+                    },
+                  ),
+                  if (widget.isLeader)
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _confirmGroupDelete(groupDocs),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _confirmGroupDelete(List<QueryDocumentSnapshot> docs) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Data"),
+        content: const Text("Delete all measurements for this time entry?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context);
+              for (var doc in docs) {
+                doc.reference.delete();
+              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Entry deleted")),
+              );
+            },
+            child: const Text("Delete", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,12 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
+// Make sure these paths are correct for your project
 import 'no_pond_assigned.dart';
 import 'profile_bottom_sheet.dart';
 import 'getting_started_dialog.dart';
-import 'leader_dashboard.dart';
-import 'data_monitoring.dart';
+// 1. IMPORT YOUR EXISTING LEADER DASHBOARD FILE
+import 'leader_dashboard.dart'; // Make sure this path is correct
+
+// --- THIS MAKES THE FILE RUNNABLE FOR TESTING ---
+void main() {
+  runApp(
+    MaterialApp(
+      title: 'PondStat (Test)',
+      theme: ThemeData(
+        // 1. UPDATED THEME COLOR to match
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        scaffoldBackgroundColor: Colors.white,
+        useMaterial3: true,
+      ),
+      debugShowCheckedModeBanner: false,
+      home: const DefaultDashboardScreen(),
+    ),
+  );
+}
+// ------------------------------------
 
 class DefaultDashboardScreen extends StatefulWidget {
   const DefaultDashboardScreen({super.key});
@@ -16,19 +32,17 @@ class DefaultDashboardScreen extends StatefulWidget {
 }
 
 class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
-  final User? currentUser = FirebaseAuth.instance.currentUser;
-  bool _isFirstTimeUser = true;
+  bool _isTeamLeader = false;
+  final bool _isFirstTimeUser = true;
 
   @override
   void initState() {
     super.initState();
     if (_isFirstTimeUser) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // _showGettingStartedDialog(context); // Uncomment if needed
-        _isFirstTimeUser = false;
+        _showGettingStartedDialog(context);
       });
     }
-    // Removed _ensureUserDocumentExists() call
   }
 
   void _showGettingStartedDialog(BuildContext context) {
@@ -41,17 +55,33 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
     );
   }
 
-  void _showProfileSheet(BuildContext context, Map<String, dynamic>? userData) {
+  void _showProfileSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return ProfileBottomSheet(
-          isTeamLeader: userData?['role'] == 'leader',
-          assignedPond: userData?['assignedPond'],
+          isTeamLeader: _isTeamLeader,
+          assignedPond: null,
           onRoleChanged: (isLeader) {
-            // UI updates automatically via StreamBuilder
+            // Update the state
+            setState(() {
+              _isTeamLeader = isLeader;
+            });
+
+            if (isLeader) {
+              // If the user just became a leader...
+              // 1. Close the bottom sheet
+              Navigator.pop(context);
+              // 2. Navigate to your existing SelectPanelPage
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const LeaderDashboard(),
+                ),
+              );
+            }
           },
         );
       },
@@ -60,118 +90,47 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (currentUser == null) {
-      return const Scaffold(body: Center(child: Text("Not logged in")));
-    }
-
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser!.uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Scaffold(body: Center(child: Text("Something went wrong")));
-        }
-        
-        // Show loading while waiting for initial data
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-
-        // If document doesn't exist, sign out and redirect to login
-        if (!snapshot.hasData || !snapshot.data!.exists) {
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            await FirebaseAuth.instance.signOut();
-          });
-
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
-
-        final userData = snapshot.data!.data() as Map<String, dynamic>;
-        final String role = userData['role'] ?? 'member';
-        final String? assignedPond = userData['assignedPond'];
-        final String fullName = userData['fullName'] ?? 'User';
-
-        Widget bodyWidget;
-        String appBarTitle = 'Dashboard';
-
-        // --- LOGIC TO SWITCH PAGES BASED ON ROLE/POND ---
-        if (role == 'leader') {
-          if (assignedPond == null || assignedPond.isEmpty) {
-            bodyWidget = const LeaderDashboard(); 
-            appBarTitle = 'Select Pond';
-          } else {
-            bodyWidget = MonitoringPage(
-              pondLetter: assignedPond,
-              leaderName: fullName,
-              isLeader: true,
-            );
-            appBarTitle = '$assignedPond (Leader)';
-          }
-        } else {
-          if (assignedPond == null || assignedPond.isEmpty) {
-            bodyWidget = const NoPondAssignedWidget();
-            appBarTitle = 'PondStat';
-          } else {
-            bodyWidget = MonitoringPage(
-              pondLetter: assignedPond,
-              leaderName: "Team Leader", // Ideally fetch leader name
-              isLeader: false,
-            );
-            appBarTitle = assignedPond;
-          }
-        }
-
-        // If the body is a page that has its own Scaffold, return it directly
-        if (bodyWidget is MonitoringPage || bodyWidget is LeaderDashboard) {
-          return bodyWidget;
-        }
-
-        // Otherwise, wrap in your standard Dashboard Scaffold
-        return Scaffold(
-          backgroundColor: Colors.white,
-          appBar: AppBar(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            title: Row(
-              children: [
-                const Icon(Icons.water_drop, color: Colors.white, size: 28),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'PondStat',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                    ),
-                    Text(
-                      appBarTitle,
-                      style: const TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                  ],
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        // 2. UPDATED APPBAR STYLES
+        backgroundColor: Colors.blue, // Use simple Colors.blue
+        foregroundColor: Colors.white,
+        title: Row(
+          children: [
+            // 3. UPDATED ICON
+            const Icon(Icons.water_drop, color: Colors.white, size: 28),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                // 4. UPDATED FONT STYLES
+                Text(
+                  'PondStat',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                ),
+                Text(
+                  'Dashboard', // Kept "Dashboard" as it's the default screen
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
                 ),
               ],
             ),
-            actions: [
-              IconButton(
-                icon: const CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.person, color: Colors.blue),
-                ),
-                onPressed: () => _showProfileSheet(context, userData),
-              ),
-              const SizedBox(width: 8),
-            ],
+          ],
+        ),
+        actions: [
+          // 5. UPDATED PROFILE ICON STYLE
+          IconButton(
+            icon: const CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white,
+              child: Icon(Icons.person, color: Colors.blue),
+            ),
+            onPressed: () => _showProfileSheet(context),
           ),
-          body: bodyWidget,
-        );
-      },
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: const NoPondAssignedWidget(),
     );
   }
 }
