@@ -30,29 +30,12 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
 
   // --- FIRESTORE UPDATE ---
   Future<void> _updateTeamRole(bool isLeader) async {
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    try {
-<<<<<<< HEAD
-      // Simply update the role.
-      // NOTE: Logic to remove/add to teams collection is simplified here. 
-      // In this app structure, 'assignedPond' in the USER doc is the source of truth.
-      
-      await FirebaseFirestore.instance.collection('users').doc(user!.uid).update({
-        'role': isLeader ? 'leader' : 'member',
-        // If demoting to member, should we clear assignedPond? 
-        // Maybe keep it so they stay in the team but as a member.
-        // If promoting to leader, they usually need to select a new pond.
-        // For safety, let's clear assignedPond if becoming a leader so they are forced to 'Select' one via dashboard.
-        'assignedPond': isLeader ? null : FieldValue.delete(), 
-      });
+    final usersRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
 
-      // Update local UI
-      setState(() {
-        _currentIsLeader = isLeader;
-      });
-      
-=======
+    try {
       // 1️⃣ Update the role in users collection
       // Also update assignedPond logic: if becoming a leader, clear assignedPond to force selection
       await usersRef.update({
@@ -71,7 +54,6 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
       }
 
       print('✅ Role updated successfully: $isLeader');
->>>>>>> 6c954a5405cabe19a30222018e744370e536e310
     } catch (e) {
       print('❌ Failed to update role: $e');
       if (mounted) {
@@ -97,15 +79,14 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 40, height: 5,
-            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+            width: 40,
+            height: 5,
+            decoration: BoxDecoration(
+              color: const Color.fromARGB(255, 224, 224, 224),
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
           const SizedBox(height: 20),
-<<<<<<< HEAD
-          
-          // User Info
-          Row(
-=======
           _buildUserInfo(),
           const SizedBox(height: 16),
           _buildTeamRoleCard(),
@@ -289,54 +270,20 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
             border: border,
           ),
           child: Row(
->>>>>>> 6c954a5405cabe19a30222018e744370e536e310
             children: [
-              const CircleAvatar(radius: 30, backgroundColor: Colors.blue, child: Icon(Icons.person, color: Colors.white)),
+              Icon(icon, color: color),
               const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(user?.displayName ?? 'User', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text(user?.email ?? '', style: const TextStyle(color: Colors.grey)),
-                ],
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                ),
               ),
             ],
           ),
-          
-          const SizedBox(height: 16),
-          
-          // Role Toggle Card
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE3F2FD),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue),
-            ),
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(_currentIsLeader ? 'Team Leader' : 'Team Member', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(_currentIsLeader ? 'Switch off to become a member' : 'Switch on to become a leader'),
-              trailing: Switch(
-                value: _currentIsLeader,
-                onChanged: (val) => _updateTeamRole(val),
-                activeColor: Colors.blue,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          
-          // Sign Out Button
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-            onTap: () async {
-              await FirebaseAuth.instance.signOut();
-              if (mounted) Navigator.pop(context);
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
