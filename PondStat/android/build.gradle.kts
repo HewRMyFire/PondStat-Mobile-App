@@ -1,5 +1,6 @@
 plugins {
-    id("com.google.gms.google-services") version "4.4.2" apply false
+    // Remove 'version "4.4.2"' -> It inherits from settings.gradle.kts
+    id("com.google.gms.google-services") apply false
 }
 
 allprojects {
@@ -25,10 +26,4 @@ subprojects {
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
-}
-
-buildscript {
-    dependencies {
-        classpath 'com.google.gms:google-services:4.4.2' // Check latest version
-    }
 }
