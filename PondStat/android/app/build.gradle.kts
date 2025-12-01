@@ -29,6 +29,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Enable MultiDex to prevent crash on startup with Firebase
+        multiDexEnabled = true 
     }
 
     buildTypes {

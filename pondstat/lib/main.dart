@@ -30,7 +30,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PondStat Login',
+      title: 'PondStat',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,
@@ -71,7 +71,19 @@ class MyApp extends StatelessWidget {
               displayColor: Colors.black,
             ),
       ),
-      home: const AuthPage(),
+      // Check authentication state to decide the initial screen
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingOverlay();
+          }
+          if (snapshot.hasData) {
+            return const DefaultDashboardScreen();
+          }
+          return const AuthPage();
+        },
+      ),
     );
   }
 }
@@ -87,10 +99,8 @@ class _AuthPageState extends State<AuthPage> {
   bool _showLoginPage = true;
   bool _isLoading = false;
 
-  /// Toggle between login and signup pages with a short overlay animation
   void toggleScreens() async {
     setState(() => _isLoading = true);
-    // Small delay to show overlay while switching
     await Future.delayed(const Duration(milliseconds: 300));
     setState(() {
       _showLoginPage = !_showLoginPage;
@@ -98,9 +108,8 @@ class _AuthPageState extends State<AuthPage> {
     });
   }
 
-  // ---------------- SIGN IN ----------------
   Future<void> _signIn(String studentNumber, String password) async {
-    setState(() => _isLoading = true); // Show overlay during sign in
+    setState(() => _isLoading = true);
     final email = "$studentNumber@pondstat.edu";
 
     try {
@@ -110,37 +119,24 @@ class _AuthPageState extends State<AuthPage> {
       );
       print("✅ Login successful!");
 
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null && user.displayName != null) {
-        // Show a toast-like overlay using ScaffoldMessenger
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Welcome, ${user.displayName}!')),
-        );
-      }
-
-      // Navigate to the main dashboard
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const DefaultDashboardScreen(),
-          ),
-        );
-      }
+      // Navigation is handled by the StreamBuilder in MyApp
     } on FirebaseAuthException catch (e) {
       print("❌ Login failed: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? "Login failed")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? "Login failed")),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false); // Hide overlay
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  // ---------------- SIGN UP ----------------
   Future<void> _signUp(
       String fullName, String studentNumber, String password) async {
-    setState(() => _isLoading = true); // Show overlay during signup
+    setState(() => _isLoading = true);
     final email = "$studentNumber@pondstat.edu";
 
     try {
@@ -149,34 +145,37 @@ class _AuthPageState extends State<AuthPage> {
 
       final uid = userCredential.user?.uid;
 
-      // Update Auth display name
       await userCredential.user?.updateDisplayName(fullName);
 
-      // Add user document to Firestore
       if (uid != null) {
         await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'fullName': fullName,
           'studentNumber': studentNumber,
-          'role': 'member',       // Default role
-          'assignedPonds': null,  // No assigned ponds yet
+          'role': 'member',
+          'assignedPond': null, // Make sure field name matches other files
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
 
       print("✅ Sign-up successful!");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created successfully!')),
-      );
-
-      // Automatically switch back to login page
-      setState(() => _showLoginPage = true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account created successfully!')),
+        );
+        // Switch to login page or let auth state change handle navigation if you want auto-login after signup
+         setState(() => _showLoginPage = true);
+      }
     } on FirebaseAuthException catch (e) {
       print("❌ Sign-up failed: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? "Sign-up failed")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? "Sign-up failed")),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false); // Hide overlay
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -185,7 +184,6 @@ class _AuthPageState extends State<AuthPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // Show login or signup page
           _showLoginPage
               ? LoginPage(
                   onToggle: toggleScreens,
@@ -195,8 +193,6 @@ class _AuthPageState extends State<AuthPage> {
                   onToggle: toggleScreens,
                   onSignUp: _signUp,
                 ),
-
-          // Show overlay when loading
           if (_isLoading) const LoadingOverlay(),
         ],
       ),
