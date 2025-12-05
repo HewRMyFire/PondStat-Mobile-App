@@ -66,7 +66,7 @@ class _LoginPageState extends State<LoginPage> {
                 TextFormField(
                   controller: _studentNumberController,
                   decoration: const InputDecoration(
-                    hintText: 'e.g., 2024-09454',
+                    hintText: 'e.g., 202409454',
                   ),
                 ),
                 const SizedBox(height: 20.0),
