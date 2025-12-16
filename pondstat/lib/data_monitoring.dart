@@ -588,36 +588,114 @@ class _MonitoringPageState extends State<MonitoringPage>
                               padding: const EdgeInsets.all(8.0),
                               child: Column(
                                 children: [
-                                  TableCalendar(
-                                    firstDay: DateTime.utc(2020, 1, 1),
-                                    lastDay: DateTime.utc(2030, 12, 31),
-                                    focusedDay: _focusedDay,
-                                    availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-                                    headerStyle: const HeaderStyle(
-                                      titleCentered: false,
-                                      formatButtonVisible: false,
-                                      titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                    ),
-                                    calendarStyle: const CalendarStyle(
-                                      selectedDecoration: BoxDecoration(
-                                        color: customBlue,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      todayDecoration: BoxDecoration(
-                                        color: Colors.blueAccent,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                                    onDaySelected: (selectedDay, focusedDay) {
-                                      setState(() {
-                                        _selectedDay = DateTime.utc(
-                                            selectedDay.year, selectedDay.month, selectedDay.day);
-                                        _focusedDay = focusedDay;
-                                      });
+                                  StreamBuilder<QuerySnapshot>(
+                                    stream: FirebaseFirestore.instance
+                                        .collection('measurements')
+                                        .where('pond', isEqualTo: widget.pondLetter)
+                                        .snapshots(),
+                                    builder: (context, snapshot) {
+                                      // 1. Process data: Map dates to the types of reports available
+                                      Map<DateTime, Set<String>> eventsMap = {};
+                                      
+                                      if (snapshot.hasData) {
+                                        for (var doc in snapshot.data!.docs) {
+                                          final data = doc.data() as Map<String, dynamic>;
+                                          final timestamp = data['timestamp'] as Timestamp?;
+                                          final type = data['type'] as String?;
+
+                                          if (timestamp != null && type != null) {
+                                            // Normalize date to UTC midnight to match TableCalendar
+                                            final date = timestamp.toDate();
+                                            final normalizedDate = DateTime.utc(
+                                                date.year, date.month, date.day);
+                                            
+                                            if (!eventsMap.containsKey(normalizedDate)) {
+                                              eventsMap[normalizedDate] = {};
+                                            }
+                                            eventsMap[normalizedDate]!.add(type);
+                                          }
+                                        }
+                                      }
+
+                                      return TableCalendar(
+                                        firstDay: DateTime.utc(2020, 1, 1),
+                                        lastDay: DateTime.utc(2030, 12, 31),
+                                        focusedDay: _focusedDay,
+                                        availableCalendarFormats: const {
+                                          CalendarFormat.month: 'Month'
+                                        },
+                                        headerStyle: const HeaderStyle(
+                                          titleCentered: false,
+                                          formatButtonVisible: false,
+                                          titleTextStyle: TextStyle(
+                                              fontSize: 16, fontWeight: FontWeight.bold),
+                                        ),
+                                        calendarStyle: const CalendarStyle(
+                                          // Adjust cell margin to make room for dots
+                                          cellMargin: EdgeInsets.all(8),
+                                          selectedDecoration: BoxDecoration(
+                                            color: Color(0xFF0077C2), // customBlue
+                                            shape: BoxShape.circle,
+                                          ),
+                                          todayDecoration: BoxDecoration(
+                                            color: Colors.blueAccent,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        selectedDayPredicate: (day) =>
+                                            isSameDay(_selectedDay, day),
+                                        onDaySelected: (selectedDay, focusedDay) {
+                                          setState(() {
+                                            _selectedDay = DateTime.utc(
+                                                selectedDay.year,
+                                                selectedDay.month,
+                                                selectedDay.day);
+                                            _focusedDay = focusedDay;
+                                          });
+                                        },
+                                        // 2. Custom Marker Builder for the 3 circles
+                                        calendarBuilders: CalendarBuilders(
+                                          markerBuilder: (context, date, events) {
+                                            final normalizedDate = DateTime.utc(
+                                                date.year, date.month, date.day);
+                                            final types = eventsMap[normalizedDate] ?? {};
+
+                                            final hasDaily = types.contains('daily');
+                                            final hasWeekly = types.contains('weekly');
+                                            final hasBiweekly = types.contains('biweekly');
+
+                                            // Create a list of only the dots we need to show
+                                            List<Widget> activeDots = [];
+                                            
+                                            if (hasDaily) {
+                                              activeDots.add(_buildStatusDot(Colors.green));
+                                            }
+                                            if (hasWeekly) {
+                                              activeDots.add(_buildStatusDot(Colors.amber));
+                                            }
+                                            if (hasBiweekly) {
+                                              activeDots.add(_buildStatusDot(Colors.blue));
+                                            }
+
+                                            return Positioned(
+                                              bottom: 1,
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                // Add spacing between the dots if there are multiple
+                                                children: activeDots
+                                                    .map((dot) => Padding(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                                                          child: dot,
+                                                        ))
+                                                    .toList(),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      );
                                     },
                                   ),
-                                  const Divider(),
+                                                                    const Divider(),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
                                     child: Row(
@@ -641,21 +719,50 @@ class _MonitoringPageState extends State<MonitoringPage>
                           Container(
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(25),
+                              borderRadius: BorderRadius.circular(50), 
                             ),
                             child: TabBar(
                               controller: _tabController,
                               indicator: BoxDecoration(
-                                color: customBlue,
-                                borderRadius: BorderRadius.circular(25),
+                                color: const Color(0xFF0077C2), // customBlue
+                                borderRadius: BorderRadius.circular(50), 
                               ),
+                              indicatorSize: TabBarIndicatorSize.tab, 
                               labelColor: Colors.white,
                               unselectedLabelColor: Colors.grey,
                               dividerColor: Colors.transparent,
-                              tabs: const [
-                                Tab(text: "Daily"),
-                                Tab(text: "Weekly"),
-                                Tab(text: "Biweekly"),
+                              labelPadding: EdgeInsets.zero, // Remove default padding to center custom rows
+                              tabs: [
+                                Tab(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildStatusDot(Colors.green),
+                                      const SizedBox(width: 8),
+                                      const Text("Daily"),
+                                    ],
+                                  ),
+                                ),
+                                Tab(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildStatusDot(Colors.amber),
+                                      const SizedBox(width: 8),
+                                      const Text("Weekly"),
+                                    ],
+                                  ),
+                                ),
+                                Tab(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildStatusDot(Colors.blue),
+                                      const SizedBox(width: 8),
+                                      const Text("Biweekly"),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -814,6 +921,16 @@ class _MonitoringPageState extends State<MonitoringPage>
             child: const Text("Delete", style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+  Widget _buildStatusDot(Color color) {
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
       ),
     );
   }
