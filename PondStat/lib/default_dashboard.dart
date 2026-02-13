@@ -7,6 +7,7 @@ import 'getting_started_dialog.dart';
 import 'leader_dashboard.dart';
 import 'data_monitoring.dart'; 
 import 'loading_overlay.dart';
+import 'firestore_helper.dart'; // Import Helper
 
 class DefaultDashboardScreen extends StatefulWidget {
   const DefaultDashboardScreen({super.key});
@@ -22,13 +23,11 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    // Check if new user (optional: simple check to show getting started)
     _checkNewUser();
   }
 
   void _checkNewUser() async {
-    // We can add logic here if we want to show the Getting Started dialog 
-    // strictly for new users, but the logic below handles the "No Pond" case.
+    // Logic handles the "No Pond" case.
   }
 
   void _showGettingStartedDialog(BuildContext context) {
@@ -47,10 +46,8 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
       builder: (BuildContext context) {
         return ProfileBottomSheet(
           isTeamLeader: _isTeamLeader,
-          assignedPond: null, // We pass null because the stream handles the actual logic now
+          assignedPond: null, 
           onRoleChanged: (isLeader) {
-            // The StreamBuilder will automatically update the UI, 
-            // so we just need to close the sheet.
             setState(() => _isTeamLeader = isLeader);
           },
         );
@@ -66,11 +63,11 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
       return const Scaffold(body: Center(child: Text("Not Authenticated")));
     }
 
-    // [FIX] Use StreamBuilder to listen to real-time changes in User Profile
+    // [FIXED] Use FirestoreHelper
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+      stream: FirestoreHelper.usersCollection.doc(user.uid).snapshots(),
       builder: (context, snapshot) {
-        // 1. Loading State
+        // 1. Loading State (waiting for connection)
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: LoadingOverlay());
         }
@@ -80,9 +77,31 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
           return Scaffold(body: Center(child: Text("Error: ${snapshot.error}")));
         }
 
-        // 3. Document missing (e.g., race condition during sign up)
+        // 3. Handle Missing Document (Ghost User)
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Scaffold(body: LoadingOverlay());
+           return Scaffold(
+             body: Center(
+               child: Column(
+                 mainAxisAlignment: MainAxisAlignment.center,
+                 children: [
+                   const Icon(Icons.warning_amber_rounded, size: 50, color: Colors.orange),
+                   const SizedBox(height: 20),
+                   const Text("User profile not found.", style: TextStyle(fontSize: 18)),
+                   const SizedBox(height: 10),
+                   const Text(
+                     "Your account exists but has no data.\nThis usually happens after a system update.",
+                     textAlign: TextAlign.center,
+                     style: TextStyle(color: Colors.grey),
+                   ),
+                   const SizedBox(height: 30),
+                   ElevatedButton(
+                     onPressed: () => FirebaseAuth.instance.signOut(),
+                     child: const Text("Sign Out & Create New Account"),
+                   ),
+                 ],
+               ),
+             ),
+           );
         }
 
         final data = snapshot.data!.data() as Map<String, dynamic>;
@@ -90,35 +109,49 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
         final assignedPond = data['assignedPond'];
         final String currentLeaderName = data['fullName'] ?? "Me";
 
-        // Update local state for the profile sheet
-        // We use a post-frame callback to avoid setState during build if needed, 
-        // but simple assignment is fine since we don't rebuild based on this variable immediately.
         _isTeamLeader = (role == 'leader');
 
         // --- ROUTING LOGIC ---
 
-        // CASE 1: User has a Pond Assigned -> Show Monitoring
         if (assignedPond != null) {
           if (role == 'leader') {
-             return MonitoringPage(
-                pondLetter: assignedPond,
-                leaderName: currentLeaderName,
-                isLeader: true,
-              );
+             // Check for team members logic
+             return StreamBuilder<QuerySnapshot>(
+               stream: FirestoreHelper.usersCollection
+                   .where('assignedPond', isEqualTo: assignedPond)
+                   .where('role', isEqualTo: 'member')
+                   .snapshots(),
+               builder: (context, memberSnapshot) {
+                 if (memberSnapshot.connectionState == ConnectionState.waiting) {
+                   return const Scaffold(body: LoadingOverlay());
+                 }
+
+                 final memberCount = memberSnapshot.data?.docs.length ?? 0;
+
+                 if (memberCount == 0) {
+                   return const LeaderDashboard();
+                 }
+
+                 return MonitoringPage(
+                    pondLetter: assignedPond,
+                    leaderName: currentLeaderName,
+                    isLeader: true,
+                  );
+               },
+             );
           } else {
-            // If member, we need to fetch the leader's name asynchronously or show a placeholder.
-            // To keep it reactive, we can fetch the leader name inside MonitoringPage or 
-            // use a FutureBuilder here. For simplicity/performance, we pass a placeholder 
-            // or fetch it. Since MonitoringPage expects a string, let's fetch it:
-            
-            return FutureBuilder<QuerySnapshot>(
-              future: FirebaseFirestore.instance
-                  .collection('users')
+            // [FIXED] Changed FutureBuilder to StreamBuilder to prevent re-fetching loops
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirestoreHelper.usersCollection
                   .where('assignedPond', isEqualTo: assignedPond)
                   .where('role', isEqualTo: 'leader')
                   .limit(1)
-                  .get(),
+                  .snapshots(),
               builder: (context, leaderSnapshot) {
+                if (leaderSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(body: LoadingOverlay());
+                }
+
                 String fetchedLeaderName = "Leader";
                 if (leaderSnapshot.hasData && leaderSnapshot.data!.docs.isNotEmpty) {
                   fetchedLeaderName = leaderSnapshot.data!.docs.first['fullName'] ?? "Leader";
@@ -135,17 +168,12 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
         }
 
         // CASE 2: No Pond Assigned
-        
-        // If Leader -> Show Leader Dashboard (Pond Selection)
         if (role == 'leader') {
           return const LeaderDashboard();
         }
 
-        // If Member -> Show "No Pond Assigned" Screen
-        // Check if we should show the onboarding dialog
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          // You might want to use a flag in SharedPreferences to show this only once
-          // _showGettingStartedDialog(context); 
+          _showGettingStartedDialog(context); 
         });
 
         return Scaffold(
