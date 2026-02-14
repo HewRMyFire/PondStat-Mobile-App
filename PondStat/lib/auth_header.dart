@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-// A reusable header widget for authentication screens (Login/Signup).
-// Displays a title, subtitle, and an animated wave background with floating bubbles.
 class AuthHeader extends StatefulWidget {
   final String title;
   final String subtitle;
@@ -23,16 +21,15 @@ class _AuthHeaderState extends State<AuthHeader> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    // Initialize the controller to run indefinitely for the continuous wave effect.
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 5), // One full cycle takes 5 seconds
+      duration: const Duration(seconds: 5),
     )..repeat();
   }
 
   @override
   void dispose() {
-    _controller.dispose(); // Always dispose controllers to prevent memory leaks
+    _controller.dispose();
     super.dispose();
   }
 
@@ -43,17 +40,15 @@ class _AuthHeaderState extends State<AuthHeader> with SingleTickerProviderStateM
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        // 't' represents the current progress of the animation (0.0 to 1.0)
         final double t = _controller.value;
 
-        // This creates a gentle "floating" effect.
+        // Calculate bubble positions
         final double bubble1X = 10 * math.cos(t * 2 * math.pi);
         final double bubble1Y = 10 * math.sin(t * 2 * math.pi);
         final double bubble2X = 10 * math.sin(t * 2 * math.pi);
         final double bubble2Y = 15 * math.cos(t * 2 * math.pi);
 
         return ClipPath(
-          // Applies the custom wave shape defined in WaveClipper
           clipper: WaveClipper(animationValue: t),
           child: Container(
             width: double.infinity,
@@ -70,7 +65,7 @@ class _AuthHeaderState extends State<AuthHeader> with SingleTickerProviderStateM
             ),
             child: Stack(
               children: [
-                // Decorative Floating Bubble 1
+                // Bubble 1
                 Positioned(
                   top: -50,
                   left: -50,
@@ -87,7 +82,7 @@ class _AuthHeaderState extends State<AuthHeader> with SingleTickerProviderStateM
                   ),
                 ),
 
-                // Decorative Floating Bubble 2
+                // Bubble 2
                 Positioned(
                   top: 50,
                   right: -30,
@@ -104,9 +99,9 @@ class _AuthHeaderState extends State<AuthHeader> with SingleTickerProviderStateM
                   ),
                 ),
 
-                // Main Text Content
+                // Text Content
                 Align(
-                  alignment: const Alignment(0.0, -0.0), // Slightly above center
+                  alignment: const Alignment(0.0, -0.0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -147,7 +142,6 @@ class _AuthHeaderState extends State<AuthHeader> with SingleTickerProviderStateM
   }
 }
 
-// Custom Clipper to create the animated wave shape at the bottom of the header.
 class WaveClipper extends CustomClipper<Path> {
   final double animationValue;
 
@@ -157,17 +151,14 @@ class WaveClipper extends CustomClipper<Path> {
   Path getClip(Size size) {
     var path = Path();
 
-    // Calculate dynamic heights for the start and end points of the wave
-    // based on the current animation value.
+    // Calculate dynamic heights
     double waveHeight1 = 40 + (10 * math.sin(animationValue * 2 * math.pi));
     double waveHeight2 = 40 + (10 * math.cos(animationValue * 2 * math.pi));
 
-    // Start drawing from the top-left (0,0 is implicit), down to the wave start height
     path.lineTo(0, size.height - waveHeight1);
 
-    // Bezier curve control point (bottom-left area)
+    // First Curve
     var firstControlPoint = Offset(size.width / 4, size.height);
-    // Bezier curve end point (middle of the screen width)
     var firstEndPoint = Offset(size.width / 2, size.height - 40);
 
     path.quadraticBezierTo(
@@ -177,10 +168,10 @@ class WaveClipper extends CustomClipper<Path> {
       firstEndPoint.dy,
     );
 
-    // The second control point moves vertically based on animation to create the "waving" motion
+    // Second Curve
     var secondControlPoint = Offset(
       size.width * 3 / 4,
-      size.height - 80 + (15 * math.sin(animationValue * 2 * math.pi))
+      size.height - 80 + (15 * math.sin(animationValue * 2 * math.pi)),
     );
     var secondEndPoint = Offset(size.width, size.height - waveHeight2);
 
@@ -191,15 +182,14 @@ class WaveClipper extends CustomClipper<Path> {
       secondEndPoint.dy,
     );
 
-    // Close the path back to the top-right and top-left
     path.lineTo(size.width, 0);
     path.close();
+
     return path;
   }
 
   @override
   bool shouldReclip(WaveClipper oldClipper) {
-    // Return true to redraw the clip whenever the animation value changes
     return true;
   }
 }
