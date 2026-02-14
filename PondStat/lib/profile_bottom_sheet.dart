@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'leader_dashboard.dart';
 import 'team_mgmt.dart';
+import 'firestore_helper.dart'; // Import Helper
 
 class ProfileBottomSheet extends StatefulWidget {
   final bool isTeamLeader;
@@ -31,18 +32,40 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
     _currentIsLeader = widget.isTeamLeader;
   }
 
-  // --- FIRESTORE UPDATE ---
   Future<void> _updateTeamRole(bool isLeader) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final usersRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final firestore = FirebaseFirestore.instance;
+    // [FIXED] Use FirestoreHelper
+    final userRef = FirestoreHelper.usersCollection.doc(user.uid);
 
     try {
-      await usersRef.update({
+      final batch = firestore.batch();
+
+      if (!isLeader) {
+        final userDoc = await userRef.get();
+        final String? currentPond = userDoc.data()?['assignedPond'];
+
+        if (currentPond != null) {
+          // [FIXED] Use FirestoreHelper
+          final teamMembersSnapshot = await FirestoreHelper.usersCollection
+              .where('assignedPond', isEqualTo: currentPond)
+              .where('role', isEqualTo: 'member')
+              .get();
+
+          for (var doc in teamMembersSnapshot.docs) {
+            batch.update(doc.reference, {'assignedPond': null});
+          }
+        }
+      }
+
+      batch.update(userRef, {
         'role': isLeader ? 'leader' : 'member',
         'assignedPond': isLeader ? null : FieldValue.delete(),
       });
+
+      await batch.commit();
       print('✅ Role updated successfully: $isLeader');
     } catch (e) {
       print('❌ Failed to update role: $e');
@@ -78,12 +101,11 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
           _buildTeamRoleCard(),
           const SizedBox(height: 16),
           
-          // --- Edit Profile Button ---
           _buildMenuButton(
             icon: Icons.edit_outlined,
             text: 'Edit Profile',
             onTap: () {
-              Navigator.pop(context); // Close the sheet
+              Navigator.pop(context); 
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const EditProfilePage()),
@@ -91,7 +113,6 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
             },
           ),
           
-          // --- My Team Button ---
           _buildMenuButton(
             icon: Icons.group_outlined,
             text: 'My Team',
@@ -217,6 +238,23 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
                 : Switch(
                     value: _currentIsLeader,
                     onChanged: (newValue) async {
+                      bool confirm = true;
+                      if (_currentIsLeader && !newValue) {
+                         confirm = await showDialog(
+                           context: context, 
+                           builder: (ctx) => AlertDialog(
+                             title: const Text("Change Role?"),
+                             content: const Text("Switching to 'Member' will release your current pond and remove all assigned members from your team."),
+                             actions: [
+                               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+                               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Confirm")),
+                             ],
+                           )
+                         ) ?? false;
+                      }
+
+                      if (!confirm) return;
+
                       setState(() {
                         _currentIsLeader = newValue;
                         _isUpdating = true;
@@ -346,10 +384,6 @@ class _ProfileBottomSheetState extends State<ProfileBottomSheet> {
   }
 }
 
-// ------------------------------------------
-//        EDIT PROFILE PAGE IMPLEMENTATION
-// ------------------------------------------
-
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
 
@@ -360,7 +394,6 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   
-  // Controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _studentNumController = TextEditingController();
   final TextEditingController _currentPasswordController = TextEditingController();
@@ -368,7 +401,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   bool _isLoading = false;
   
-  // To detect changes
   String _initialName = '';
   String _initialStudentNum = '';
 
@@ -381,13 +413,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      // 1. Get Name from Auth (usually faster)
       _nameController.text = user.displayName ?? '';
       _initialName = user.displayName ?? '';
 
-      // 2. Get Student Number from Firestore
       try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        // [FIXED] Use FirestoreHelper
+        final doc = await FirestoreHelper.usersCollection.doc(user.uid).get();
         if (doc.exists && doc.data() != null) {
           final data = doc.data()!;
           final sNum = data['studentNumber']?.toString() ?? '';
@@ -395,7 +426,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
           _studentNumController.text = sNum;
           _initialStudentNum = sNum;
           
-          // Also sync name if Firestore has a newer/different one
           if (data.containsKey('fullName')) {
             final fName = data['fullName']?.toString() ?? '';
             _nameController.text = fName;
@@ -403,10 +433,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           }
         }
       } catch (e) {
-        // Handle error
         print("Error fetching user data: $e");
       }
-      setState(() {}); // refresh UI
+      if (mounted) setState(() {});
     }
   }
 
@@ -426,8 +455,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     if (user == null) return;
 
     try {
-      // 1. Re-authenticate
-      // We assume email is derived from the *current* student number (or user.email)
       final String? email = user.email; 
       if (email == null) throw Exception("User email not found");
 
@@ -438,40 +465,39 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       await user.reauthenticateWithCredential(credential);
 
-      // 2. Prepare Updates
       bool nameChanged = _nameController.text.trim() != _initialName;
       bool studentNumChanged = _studentNumController.text.trim() != _initialStudentNum;
       bool passwordChanged = _newPasswordController.text.isNotEmpty;
 
-      // Update Firestore
+      if (passwordChanged) {
+        await user.updatePassword(_newPasswordController.text.trim());
+      }
+
+      if (studentNumChanged) {
+         final newEmail = "${_studentNumController.text.trim()}@pondstat.edu";
+         try {
+           await user.verifyBeforeUpdateEmail(newEmail);
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Verification email sent to new address. Please verify to update login.')),
+           );
+         } catch (e) {
+           throw Exception("Could not update email: $e");
+         }
+      }
+
+      if (nameChanged) {
+        await user.updateDisplayName(_nameController.text.trim());
+      }
+
       final Map<String, dynamic> firestoreUpdates = {};
       if (nameChanged) firestoreUpdates['fullName'] = _nameController.text.trim();
       if (studentNumChanged) firestoreUpdates['studentNumber'] = _studentNumController.text.trim();
 
       if (firestoreUpdates.isNotEmpty) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).update(firestoreUpdates);
+        // [FIXED] Use FirestoreHelper
+        await FirestoreHelper.usersCollection.doc(user.uid).update(firestoreUpdates);
       }
 
-      // Update Firebase Auth - Name
-      if (nameChanged) {
-        await user.updateDisplayName(_nameController.text.trim());
-      }
-
-      // Update Firebase Auth - Email (If student number changed)
-      if (studentNumChanged) {
-        final newEmail = "${_studentNumController.text.trim()}@pondstat.edu";
-        await user.verifyBeforeUpdateEmail(newEmail); // or updateEmail depending on version
-        // NOTE: updateEmail might require sending a verification email depending on settings.
-        // For simplicity here we use updateEmail if verifyBeforeUpdateEmail isn't standard in your version.
-        // await user.updateEmail(newEmail);
-      }
-
-      // Update Firebase Auth - Password
-      if (passwordChanged) {
-        await user.updatePassword(_newPasswordController.text.trim());
-      }
-
-      // Success
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully!')),
@@ -514,7 +540,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
               const Text("Public Info", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 10),
               
-              // Full Name
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -526,14 +551,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
               const SizedBox(height: 16),
 
-              // Student Number
               TextFormField(
                 controller: _studentNumController,
                 decoration: const InputDecoration(
                   labelText: "Student Number",
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.badge_outlined),
-                  helperText: "Changing this changes your login email.",
+                  helperText: "Note: Changing this requires email verification for new login.",
                 ),
                 validator: (val) => val == null || val.isEmpty ? "Required" : null,
               ),
@@ -542,7 +566,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
               const Text("Security", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 10),
 
-              // New Password
               TextFormField(
                 controller: _newPasswordController,
                 obscureText: true,
@@ -554,7 +577,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
               const SizedBox(height: 16),
 
-              // Current Password (Required)
               TextFormField(
                 controller: _currentPasswordController,
                 obscureText: true,
@@ -563,14 +585,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.lock),
                   filled: true,
-                  fillColor: Color(0xFFFFF3E0), // Highlight that this is important
+                  fillColor: Color(0xFFFFF3E0),
                 ),
                 validator: (val) => val == null || val.isEmpty ? "Required to verify identity" : null,
               ),
 
               const SizedBox(height: 30),
 
-              // Save Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(

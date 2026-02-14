@@ -7,12 +7,18 @@ import 'login_page.dart';
 import 'signup_page.dart';
 import 'loading_overlay.dart';
 import 'default_dashboard.dart';
+import 'firestore_helper.dart'; // Import Helper
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // Enable offline persistence to help with spotty connections
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
     print("✅ Firebase connected successfully!");
   } catch (e) {
@@ -32,7 +38,6 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.light,
         primarySwatch: Colors.blue,
-        // ... (keep your existing theme settings)
         primaryColor: const Color(0xFF1A73E8),
         scaffoldBackgroundColor: Colors.white,
         inputDecorationTheme: InputDecorationTheme(
@@ -69,12 +74,11 @@ class MyApp extends StatelessWidget {
               displayColor: Colors.black,
             ),
       ),
-      home: const AuthWrapper(), // USE THE WRAPPER HERE
+      home: const AuthWrapper(),
     );
   }
 }
 
-// --- NEW AUTH WRAPPER WIDGET ---
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -97,13 +101,11 @@ class AuthWrapper extends StatelessWidget {
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
-  // ... (Keep existing AuthPage implementation exactly as is)
   @override
   State<AuthPage> createState() => _AuthPageState();
 }
 
 class _AuthPageState extends State<AuthPage> {
-  // ... (Keep existing logic)
   bool _showLoginPage = true;
   bool _isLoading = false;
 
@@ -127,10 +129,25 @@ class _AuthPageState extends State<AuthPage> {
       );
       print("✅ Login successful!");
     } on FirebaseAuthException catch (e) {
-      print("❌ Login failed: $e");
+      print("❌ Login failed: ${e.code} - ${e.message}");
+      
+      String errorMessage = e.message ?? "Login failed";
+      
+      if (e.code == 'network-request-failed') {
+        errorMessage = "Network error. Check internet or add SHA-1 in Firebase Console.";
+      } else if (e.code == 'user-not-found') {
+        errorMessage = "User not found. Please sign up first.";
+      } else if (e.code == 'wrong-password') {
+        errorMessage = "Incorrect password.";
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? "Login failed")),
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     } finally {
@@ -144,17 +161,20 @@ class _AuthPageState extends State<AuthPage> {
       String fullName, String studentNumber, String password) async {
     setState(() => _isLoading = true);
     final email = "$studentNumber@pondstat.edu";
+    
+    UserCredential? userCredential;
 
     try {
-      UserCredential userCredential = await FirebaseAuth.instance
+      userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
 
       final uid = userCredential.user?.uid;
 
-      await userCredential.user?.updateDisplayName(fullName);
-
       if (uid != null) {
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        await userCredential.user?.updateDisplayName(fullName);
+        
+        // Use FirestoreHelper for consistent paths
+        await FirestoreHelper.usersCollection.doc(uid).set({
           'fullName': fullName,
           'studentNumber': studentNumber,
           'role': 'member',
@@ -175,6 +195,19 @@ class _AuthPageState extends State<AuthPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message ?? "Sign-up failed")),
+        );
+      }
+    } catch (e) {
+      print("❌ Firestore creation failed. Rolling back user.");
+      try {
+        await userCredential?.user?.delete();
+      } catch (delError) {
+        print("Failed to delete user during rollback: $delError");
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error creating profile: $e")),
         );
       }
     } finally {

@@ -6,10 +6,12 @@ class LoadingOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      // Semi-transparent dark background
+      color: Colors.black.withOpacity(0.5),
       child: const Center(
+        // Standard system loading spinner (no ripple)
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A73E8)),
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
         ),
       ),
     );

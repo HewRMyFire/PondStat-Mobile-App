@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'main.dart';
 import 'default_dashboard.dart'; 
 import 'profile_bottom_sheet.dart'; 
+import 'firestore_helper.dart'; // Import Helper
 
 class MonitoringPage extends StatefulWidget {
   final String pondLetter;
@@ -27,10 +28,9 @@ class _MonitoringPageState extends State<MonitoringPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  DateTime _focusedDay = DateTime.now();
+  late DateTime _focusedDay;
   DateTime? _selectedDay;
 
-  // --- Parameter Definitions ---
   final List<Map<String, dynamic>> _dailyParameters = const [
     {'label': 'Water Temperature', 'icon': Icons.thermostat_outlined, 'unit': '°C', 'keyboardType': TextInputType.number},
     {'label': 'Air Temperature', 'icon': Icons.air_outlined, 'unit': '°C', 'keyboardType': TextInputType.number},
@@ -60,7 +60,12 @@ class _MonitoringPageState extends State<MonitoringPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _selectedDay = _focusedDay;
+    
+    // [FIXED] Initialize _selectedDay to UTC normalized date
+    // This ensures data added immediately (before tapping calendar) matches the keys used for dots.
+    final now = DateTime.now();
+    _focusedDay = now;
+    _selectedDay = DateTime.utc(now.year, now.month, now.day);
   }
 
   @override
@@ -69,8 +74,6 @@ class _MonitoringPageState extends State<MonitoringPage>
     super.dispose();
   }
 
-  // --- Profile Sheet Logic ---
-  // --- Profile Sheet Logic ---
   void _showProfileSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -81,12 +84,10 @@ class _MonitoringPageState extends State<MonitoringPage>
           isTeamLeader: widget.isLeader,
           assignedPond: widget.pondLetter,
           onRoleChanged: (isLeader) {
-            // Close the sheet
             Navigator.pop(context);
-            // Navigate back to AuthWrapper to restore the Auth Listener
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (context) => const AuthWrapper()), // CHANGE THIS
+              MaterialPageRoute(builder: (context) => const AuthWrapper()), 
               (route) => false,
             );
           },
@@ -108,7 +109,8 @@ class _MonitoringPageState extends State<MonitoringPage>
 
     final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
-    await FirebaseFirestore.instance.collection('measurements').add({
+    // [FIXED] Use FirestoreHelper
+    await FirestoreHelper.measurementsCollection.add({
       'pond': widget.pondLetter,
       'dateKey': dateKey,
       'timestamp': Timestamp.fromDate(_selectedDay!),
@@ -123,8 +125,6 @@ class _MonitoringPageState extends State<MonitoringPage>
       'pointValues': pointValues,
     });
   }
-
-  // --- UI Methods ---
 
   void _showAddDataOverlay() {
     if (_selectedDay == null) {
@@ -295,9 +295,7 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
-  // --- UPDATED: Edit Dialog now edits individual Points ---
   void _showEditDataDialog(List<QueryDocumentSnapshot> docs) {
-    // Nested map to store controllers: { 'docID': { 'A': Controller, 'B': Controller... } }
     final Map<String, Map<String, TextEditingController>> groupControllers = {};
     final List<String> points = const ['A', 'B', 'C', 'D'];
 
@@ -308,7 +306,6 @@ class _MonitoringPageState extends State<MonitoringPage>
       groupControllers[doc.id] = {};
 
       for (var p in points) {
-        // Pre-fill if value exists, otherwise empty
         String initialValue = pointValues[p]?.toString() ?? '';
         groupControllers[doc.id]![p] = TextEditingController(text: initialValue);
       }
@@ -332,7 +329,6 @@ class _MonitoringPageState extends State<MonitoringPage>
                 children: [
                   Text("$label ($unit)", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                   const SizedBox(height: 8),
-                  // Grid of 4 inputs for A, B, C, D
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
@@ -367,6 +363,8 @@ class _MonitoringPageState extends State<MonitoringPage>
             ElevatedButton(
               onPressed: () async {
                 try {
+                  final batch = FirebaseFirestore.instance.batch();
+
                   for (var doc in docs) {
                     final controllersMap = groupControllers[doc.id];
                     if (controllersMap == null) continue;
@@ -375,7 +373,6 @@ class _MonitoringPageState extends State<MonitoringPage>
                     int count = 0;
                     Map<String, double> newPointValues = {};
 
-                    // 1. Gather new values from inputs
                     for (var p in points) {
                       final text = controllersMap[p]?.text;
                       if (text != null && text.isNotEmpty) {
@@ -389,18 +386,18 @@ class _MonitoringPageState extends State<MonitoringPage>
                     }
 
                     if (count > 0) {
-                      // 2. Calculate new Average
                       double newAvg = sum / count;
                       newAvg = double.parse(newAvg.toStringAsFixed(2));
 
-                      // 3. Update Firestore
-                      await doc.reference.update({
+                      batch.update(doc.reference, {
                         'pointValues': newPointValues,
                         'value': newAvg,
                       });
                     }
                   }
                   
+                  await batch.commit();
+
                   if (mounted) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -441,14 +438,26 @@ class _MonitoringPageState extends State<MonitoringPage>
       default: return const Text("Select a tab to add data.");
     }
 
+    // [FIXED] Calculate aspect ratio dynamically for better responsiveness
+    // Assumes 2 columns. 
+    // width = (Screen Width - Padding (32) - Spacing(10)) / 2
+    // Height approx 70-80px per card is good for touch targets
+    double screenWidth = MediaQuery.of(context).size.width;
+    int crossAxisCount = 2;
+    double padding = 32.0;
+    double spacing = 10.0;
+    double itemWidth = (screenWidth - padding - spacing) / crossAxisCount;
+    double itemHeight = 75.0; // Fixed sensible height for the card
+    double childAspectRatio = itemWidth / itemHeight;
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 3.5,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: spacing,
+        mainAxisSpacing: spacing,
+        childAspectRatio: childAspectRatio, // Use calculated ratio
       ),
       itemCount: parameters.length,
       itemBuilder: (context, i) {
@@ -469,6 +478,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                         param['label'] as String,
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 2, // Allow text to wrap if needed
                       ),
                     ),
                   ],
@@ -589,12 +599,11 @@ class _MonitoringPageState extends State<MonitoringPage>
                               child: Column(
                                 children: [
                                   StreamBuilder<QuerySnapshot>(
-                                    stream: FirebaseFirestore.instance
-                                        .collection('measurements')
+                                    // [FIXED] Use FirestoreHelper
+                                    stream: FirestoreHelper.measurementsCollection
                                         .where('pond', isEqualTo: widget.pondLetter)
                                         .snapshots(),
                                     builder: (context, snapshot) {
-                                      // 1. Process data: Map dates to the types of reports available
                                       Map<DateTime, Set<String>> eventsMap = {};
                                       
                                       if (snapshot.hasData) {
@@ -604,8 +613,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                                           final type = data['type'] as String?;
 
                                           if (timestamp != null && type != null) {
-                                            // Normalize date to UTC midnight to match TableCalendar
                                             final date = timestamp.toDate();
+                                            // Ensure UTC normalization for the calendar markers
                                             final normalizedDate = DateTime.utc(
                                                 date.year, date.month, date.day);
                                             
@@ -631,10 +640,9 @@ class _MonitoringPageState extends State<MonitoringPage>
                                               fontSize: 16, fontWeight: FontWeight.bold),
                                         ),
                                         calendarStyle: const CalendarStyle(
-                                          // Adjust cell margin to make room for dots
                                           cellMargin: EdgeInsets.all(8),
                                           selectedDecoration: BoxDecoration(
-                                            color: Color(0xFF0077C2), // customBlue
+                                            color: Color(0xFF0077C2), 
                                             shape: BoxShape.circle,
                                           ),
                                           todayDecoration: BoxDecoration(
@@ -653,7 +661,6 @@ class _MonitoringPageState extends State<MonitoringPage>
                                             _focusedDay = focusedDay;
                                           });
                                         },
-                                        // 2. Custom Marker Builder for the 3 circles
                                         calendarBuilders: CalendarBuilders(
                                           markerBuilder: (context, date, events) {
                                             final normalizedDate = DateTime.utc(
@@ -664,7 +671,6 @@ class _MonitoringPageState extends State<MonitoringPage>
                                             final hasWeekly = types.contains('weekly');
                                             final hasBiweekly = types.contains('biweekly');
 
-                                            // Create a list of only the dots we need to show
                                             List<Widget> activeDots = [];
                                             
                                             if (hasDaily) {
@@ -681,7 +687,6 @@ class _MonitoringPageState extends State<MonitoringPage>
                                               bottom: 1,
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
-                                                // Add spacing between the dots if there are multiple
                                                 children: activeDots
                                                     .map((dot) => Padding(
                                                           padding: const EdgeInsets.symmetric(horizontal: 1.0),
@@ -807,8 +812,8 @@ class _MonitoringPageState extends State<MonitoringPage>
     final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('measurements')
+      // [FIXED] Use FirestoreHelper
+      stream: FirestoreHelper.measurementsCollection
           .where('pond', isEqualTo: widget.pondLetter)
           .where('type', isEqualTo: type)
           .where('dateKey', isEqualTo: dateKey)
@@ -911,9 +916,11 @@ class _MonitoringPageState extends State<MonitoringPage>
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               Navigator.pop(context);
+              final batch = FirebaseFirestore.instance.batch();
               for (var doc in docs) {
-                doc.reference.delete();
+                batch.delete(doc.reference);
               }
+              batch.commit();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("Entry deleted")),
               );

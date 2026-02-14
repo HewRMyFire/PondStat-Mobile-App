@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'default_dashboard.dart';
+import 'firestore_helper.dart'; // Import Helper
 
 class TeamMgmt extends StatefulWidget {
   final String selectedPanel;
@@ -40,14 +41,18 @@ class _TeamMgmtState extends State<TeamMgmt> {
 
   Future<void> _fetchAllUsers() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'member')
-          .get();
+      // [FIXED] Use FirestoreHelper
+      // Removed .where() to satisfy strict security rules if needed, 
+      // but with updated rules, this works. Using pure fetch is safest.
+      final snapshot = await FirestoreHelper.usersCollection.get();
 
       if (mounted) {
         setState(() {
-          _allUsers = snapshot.docs;
+          // Filter in memory for safety
+          _allUsers = snapshot.docs.where((doc) {
+             final data = doc.data();
+             return data['role'] == 'member';
+          }).toList();
           _isLoading = false;
         });
       }
@@ -85,7 +90,19 @@ class _TeamMgmtState extends State<TeamMgmt> {
     });
   }
 
-  Future<void> _addMember(DocumentSnapshot userDoc) async {
+  Future<void> _addMember(DocumentSnapshot oldUserDoc) async {
+    final DocumentSnapshot userDoc;
+    try {
+      // [FIXED] Use FirestoreHelper
+      userDoc = await FirestoreHelper.usersCollection
+          .doc(oldUserDoc.id)
+          .get();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to refresh user data.')));
+      return;
+    }
+
     final userData = userDoc.data() as Map<String, dynamic>;
     final String currentPond = userData['assignedPond'] ?? '';
     final String name = userData['fullName'] ?? 'Student';
@@ -105,33 +122,43 @@ class _TeamMgmtState extends State<TeamMgmt> {
         _searchResults.removeWhere((doc) => doc.id == userDoc.id);
       });
 
-      await FirebaseFirestore.instance
-          .collection('users')
+      // [FIXED] Use FirestoreHelper
+      await FirestoreHelper.usersCollection
           .doc(userDoc.id)
           .update({'assignedPond': widget.selectedPanel});
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('$name added to team!'),
-            backgroundColor: Colors.green),
-      );
+      _fetchAllUsers(); // Refresh list
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('$name added to team!'),
+              backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        _onSearchChanged(); 
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   Future<void> _removeMember(String uid) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
+      // [FIXED] Use FirestoreHelper
+      await FirestoreHelper.usersCollection
           .doc(uid)
           .update({'assignedPond': null});
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Member removed')),
       );
+      
+      _fetchAllUsers();
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
@@ -215,7 +242,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
                       children: [
                         const SizedBox(height: 10),
                         const Text(
-                          "  Select Students",
+                          "  Manage Team",
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -256,7 +283,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
                         Expanded(
                           child: _isSearching
                               ? _buildSearchResults()
-                              : _buildCurrentTeamList(),
+                              : _buildDashboard(),
                         ),
                       ],
                     ),
@@ -304,79 +331,124 @@ class _TeamMgmtState extends State<TeamMgmt> {
   }
 
   Widget _buildSearchResults() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "${_searchResults.length} students found",
-          style: TextStyle(color: Colors.grey[600], fontSize: 13),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _searchResults.length,
-            itemBuilder: (context, index) {
-              final doc = _searchResults[index];
-              final data = doc.data() as Map<String, dynamic>;
-              final isAssignedOther = (data['assignedPond'] != null);
-
-              return Card(
-                elevation: 2,
-                margin: const EdgeInsets.only(bottom: 10),
-                shape:
-                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFE0E0E0),
-                    child: Icon(Icons.person, color: Colors.grey),
-                  ),
-                  title: Text(
-                    data['fullName'] ?? 'Unknown',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  subtitle: Text(
-                    isAssignedOther
-                        ? "${data['studentNumber']} • in ${data['assignedPond']}"
-                        : data['studentNumber'] ?? '',
-                    style: TextStyle(
-                      color: isAssignedOther ? Colors.orange : Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                  trailing: InkWell(
-                    onTap: () => _addMember(doc),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE3F2FD),
-                        borderRadius: BorderRadius.circular(50), // FIXED
-                      ),
-                      child: const Icon(Icons.person_add,
-                          color: Color(0xFF0077C2), size: 20),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    if (_searchResults.isEmpty) {
+      return const Center(
+        child: Text("No students found", style: TextStyle(color: Colors.grey)),
+      );
+    }
+    return ListView.builder(
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        final doc = _searchResults[index];
+        return _buildUserCard(doc, isSearchResult: true);
+      },
     );
+  }
+
+  Widget _buildDashboard() {
+    final availableMembers = _allUsers.where((doc) {
+       final data = doc.data() as Map<String, dynamic>;
+       return data['assignedPond'] == null;
+    }).toList();
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildCurrentTeamList(),
+          const Divider(height: 30),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+            child: Row(
+              children: [
+                 const Icon(Icons.person_add_alt_1_outlined, color: Colors.grey),
+                 const SizedBox(width: 8),
+                 Text(
+                   "Available Students (${availableMembers.length})",
+                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                 ),
+              ],
+            ),
+          ),
+          if (availableMembers.isEmpty)
+             const Padding(
+               padding: EdgeInsets.all(16.0),
+               child: Center(child: Text("No unassigned students found.\nUse Sign Up to create member accounts.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12))),
+             )
+          else
+            ...availableMembers.map((doc) => _buildUserCard(doc, isSearchResult: true)).toList(),
+          
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserCard(DocumentSnapshot doc, {required bool isSearchResult}) {
+      final data = doc.data() as Map<String, dynamic>;
+      final isAssignedOther = (data['assignedPond'] != null);
+      
+      return Card(
+        elevation: 2,
+        margin: const EdgeInsets.only(bottom: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ListTile(
+          leading: const CircleAvatar(
+            backgroundColor: Color(0xFFE0E0E0),
+            child: Icon(Icons.person, color: Colors.grey),
+          ),
+          title: Text(
+            data['fullName'] ?? 'Unknown',
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          subtitle: Text(
+            isAssignedOther
+                ? "${data['studentNumber']} • in ${data['assignedPond']}"
+                : data['studentNumber'] ?? '',
+            style: TextStyle(
+              color: isAssignedOther ? Colors.orange : Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
+          trailing: isSearchResult 
+            ? InkWell(
+                onTap: () => _addMember(doc),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(50), 
+                  ),
+                  child: const Icon(Icons.person_add,
+                      color: Color(0xFF0077C2), size: 20),
+                ),
+              )
+            : IconButton(
+                  icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                  onPressed: () => _removeMember(doc.id),
+              ),
+        ),
+      );
   }
 
   Widget _buildCurrentTeamList() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .where('assignedPond', isEqualTo: widget.selectedPanel)
-          .snapshots(),
+      // [FIXED] Use FirestoreHelper
+      stream: FirestoreHelper.usersCollection.snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final members = snapshot.data?.docs ?? [];
+        final allDocs = snapshot.data?.docs ?? [];
+        
+        // Filter in memory
+        final members = allDocs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return data['assignedPond'] == widget.selectedPanel;
+        }).toList();
+
         final int memberCount = members.length;
 
         return Column(
@@ -389,7 +461,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
                     Icon(Icons.group_outlined, color: Color(0xFF0077C2)),
                     SizedBox(width: 8),
                     Text(
-                      "Team Members",
+                      "Current Team",
                       style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -401,7 +473,7 @@ class _TeamMgmtState extends State<TeamMgmt> {
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: const Color(0xFF0077C2),
-                    borderRadius: BorderRadius.circular(50), // FIXED
+                    borderRadius: BorderRadius.circular(50),
                   ),
                   child: Text(
                     "$memberCount",
@@ -417,126 +489,29 @@ class _TeamMgmtState extends State<TeamMgmt> {
             const SizedBox(height: 16),
 
             if (memberCount == 0)
-              Expanded(
-                child: CustomPaint(
-                  painter: _DashedRectPainter(
-                      color: Colors.grey, strokeWidth: 1.5, gap: 5.0),
-                  child: Container(
+               Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(50), // FIXED
-                          ),
-                          child: const Icon(Icons.group_add,
-                              size: 32, color: Color(0xFF0077C2)),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          "No team members added yet",
-                          style: TextStyle(
-                              color: Colors.grey,
-                              fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          "Search and add students above",
-                          style: TextStyle(color: Colors.grey, fontSize: 12),
-                        ),
+                      children: const [
+                        Icon(Icons.group_add, size: 32, color: Colors.grey),
+                        SizedBox(height: 8),
+                        Text("No team members yet", style: TextStyle(color: Colors.grey)),
                       ],
                     ),
-                  ),
-                ),
-              )
+                  )
             else
-              Expanded(
-                child: ListView.builder(
-                  itemCount: members.length,
-                  itemBuilder: (context, index) {
-                    final m = members[index].data() as Map<String, dynamic>;
-
-                    return Card(
-                      elevation: 1,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFFFF3E0),
-                          child: Icon(Icons.person, color: Colors.orange),
-                        ),
-                        title: Text(
-                          m['fullName'] ?? 'Unknown',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        subtitle: Text(
-                          m['studentNumber'] ?? '',
-                          style: TextStyle(
-                              color: Colors.grey[600], fontSize: 12),
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.remove_circle_outline,
-                              color: Colors.red),
-                          onPressed: () => _removeMember(members[index].id),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+              Column(
+                children: members.map((m) => _buildUserCard(m, isSearchResult: false)).toList(),
               ),
           ],
         );
       },
     );
   }
-}
-
-class _DashedRectPainter extends CustomPainter {
-  final double strokeWidth;
-  final Color color;
-  final double gap;
-
-  _DashedRectPainter(
-      {this.strokeWidth = 1.0, this.color = Colors.black, this.gap = 5.0});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    Path path = Path();
-    path.addRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.width, size.height),
-        const Radius.circular(12),
-      ),
-    );
-
-    Path dashPath = Path();
-    double dashWidth = 10;
-    double distance = 0;
-
-    for (PathMetric pathMetric in path.computeMetrics()) {
-      while (distance < pathMetric.length) {
-        dashPath.addPath(
-          pathMetric.extractPath(distance, distance + dashWidth),
-          Offset.zero,
-        );
-        distance += dashWidth + gap;
-      }
-    }
-
-    canvas.drawPath(dashPath, paint);
-  }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
