@@ -7,9 +7,23 @@ import '../loading_overlay.dart';
 import '../firebase/firestore_helper.dart';
 import 'create_pond_sheet.dart';
 import 'pond_list_card.dart';
+import '../getting_started_dialog.dart';
 
-class DefaultDashboardScreen extends StatelessWidget {
+class DefaultDashboardScreen extends StatefulWidget {
   const DefaultDashboardScreen({super.key});
+
+  @override
+  State<DefaultDashboardScreen> createState() => _DefaultDashboardScreenState();
+}
+
+class _DefaultDashboardScreenState extends State<DefaultDashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      GettingStartedDialog.showIfNeeded(context);
+    });
+  }
 
   void _showProfileSheet(BuildContext context) {
     showModalBottomSheet(
@@ -40,7 +54,11 @@ class DefaultDashboardScreen extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return const Scaffold(body: Center(child: Text("Not Authenticated")));
+      return const Scaffold(
+        body: Center(
+          child: Text("Not Authenticated"),
+        ),
+      );
     }
 
     return Scaffold(
@@ -56,6 +74,11 @@ class DefaultDashboardScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline, color: Colors.white),
+            tooltip: 'How it works',
+            onPressed: () => GettingStartedDialog.showManual(context),
+          ),
           IconButton(
             icon: const CircleAvatar(
               radius: 16,
