@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'no_pond_assigned.dart';
-import 'profile_bottom_sheet.dart';
-import 'loading_overlay.dart';
-import 'firestore_helper.dart';
+import '../no_pond_assigned.dart';
+import '../profile_bottom_sheet.dart';
+import '../loading_overlay.dart';
+import '../firestore_helper.dart';
 import 'create_pond_sheet.dart';
 import 'pond_list_card.dart';
 

@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'loading_overlay.dart';
-import 'default_dashboard.dart';
+import 'dashboard/default_dashboard.dart';
 import 'welcome_page.dart';
 
 void main() async {
