@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-
-import 'main.dart';
-import 'default_dashboard.dart';
-import 'profile_bottom_sheet.dart';
-import 'firestore_helper.dart';
+import '../main.dart';
+import '../profile_bottom_sheet.dart';
+import '../firestore_helper.dart';
 import 'monitoring_parameters.dart';
-import 'monitoring_header.dart';
 import 'measurement_card.dart';
+import 'monitoring_calendar.dart';
 
 class MonitoringPage extends StatefulWidget {
   final String pondId;
@@ -86,7 +82,8 @@ class _MonitoringPageState extends State<MonitoringPage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _selectedDay == null) return;
 
-    final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
+    final String dateKey =
+        "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     await FirestoreHelper.measurementsCollection.add({
       'pondId': widget.pondId,
@@ -107,14 +104,16 @@ class _MonitoringPageState extends State<MonitoringPage>
   void _showAddDataOverlay() {
     if (!canEdit) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You need Editor or Owner permissions to add data.')),
+        const SnackBar(
+            content: Text('You need Editor or Owner permissions to add data.')),
       );
       return;
     }
 
     if (_selectedDay == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a day on the calendar first.')),
+        const SnackBar(
+            content: Text('Please select a day on the calendar first.')),
       );
       return;
     }
@@ -137,11 +136,12 @@ class _MonitoringPageState extends State<MonitoringPage>
               children: [
                 Text(
                   "Add Data for ${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}",
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "Select Parameter for ${_getTabTitle(_tabController.index)}",
+                  "Select Parameter for ${MonitoringParameters.getTabTitle(_tabController.index)}",
                   style: const TextStyle(fontSize: 16, color: Colors.grey),
                 ),
                 const Divider(),
@@ -162,7 +162,8 @@ class _MonitoringPageState extends State<MonitoringPage>
     final String unit = parameter['unit'];
     final TextInputType keyboardType = parameter['keyboardType'];
     final List<String> points = const ['A', 'B', 'C', 'D'];
-    final String dateString = "${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}";
+    final String dateString =
+        "${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}";
 
     TimeOfDay? selectedTime = TimeOfDay.now();
     Map<String, TextEditingController> valueControllers = {
@@ -237,7 +238,8 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                   if (count == 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Please enter at least one value")),
+                      const SnackBar(
+                          content: Text("Please enter at least one value")),
                     );
                     return;
                   }
@@ -281,7 +283,8 @@ class _MonitoringPageState extends State<MonitoringPage>
   void _showEditDataDialog(List<QueryDocumentSnapshot> docs) {
     if (!canEdit) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You need Editor or Owner permissions to edit data.')),
+        const SnackBar(
+            content: Text('You need Editor or Owner permissions to edit data.')),
       );
       return;
     }
@@ -297,7 +300,8 @@ class _MonitoringPageState extends State<MonitoringPage>
 
       for (var p in points) {
         String initialValue = pointValues[p]?.toString() ?? '';
-        groupControllers[doc.id]![p] = TextEditingController(text: initialValue);
+        groupControllers[doc.id]![p] =
+            TextEditingController(text: initialValue);
       }
     }
 
@@ -317,7 +321,9 @@ class _MonitoringPageState extends State<MonitoringPage>
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("$label ($unit)", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                  Text("$label ($unit)",
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, color: Colors.blue)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 10,
@@ -332,7 +338,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                           style: const TextStyle(fontSize: 13),
                           decoration: InputDecoration(
                             labelText: p,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 8),
                             border: const OutlineInputBorder(),
                             isDense: true,
                           ),
@@ -387,7 +394,8 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Points updated & Average recalculated")),
+                  const SnackBar(
+                      content: Text("Points updated & Average recalculated")),
                 );
 
                 try {
@@ -408,23 +416,10 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
-  String _getTabTitle(int index) {
-    switch (index) {
-      case 0: return "Daily Monitoring";
-      case 1: return "Weekly Analysis";
-      case 2: return "Biweekly Report";
-      default: return "";
-    }
-  }
-
   Widget _buildOverlayContent(int index) {
-    List<Map<String, dynamic>> parameters;
-    switch (index) {
-      case 0: parameters = MonitoringParameters.daily; break;
-      case 1: parameters = MonitoringParameters.weekly; break;
-      case 2: parameters = MonitoringParameters.biweekly; break;
-      default: return const Text("Select a tab to add data.");
-    }
+    List<Map<String, dynamic>> parameters =
+        MonitoringParameters.getParametersByIndex(index);
+    if (parameters.isEmpty) return const Text("Select a tab to add data.");
 
     double screenWidth = MediaQuery.of(context).size.width;
     int crossAxisCount = 2;
@@ -460,7 +455,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                     Expanded(
                       child: Text(
                         param['label'] as String,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 2,
                       ),
@@ -472,6 +468,57 @@ class _MonitoringPageState extends State<MonitoringPage>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSyncStatus() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirestoreHelper.measurementsCollection
+          .limit(1)
+          .snapshots(includeMetadataChanges: true),
+      builder: (context, snapshot) {
+        bool hasPendingWrites = false;
+
+        if (snapshot.hasData) {
+          hasPendingWrites = snapshot.data!.metadata.hasPendingWrites;
+        }
+
+        return Tooltip(
+          message:
+              hasPendingWrites ? "Saving locally (Offline)" : "Synced to Cloud",
+          child: Row(
+            children: [
+              Icon(
+                hasPendingWrites
+                    ? Icons.cloud_upload_outlined
+                    : Icons.cloud_done_outlined,
+                color: hasPendingWrites
+                    ? Colors.orange[300]
+                    : Colors.lightGreenAccent,
+                size: 20,
+              ),
+              if (hasPendingWrites) ...[
+                const SizedBox(width: 4),
+                Text(
+                  "Offline mode",
+                  style: TextStyle(color: Colors.orange[300], fontSize: 10),
+                )
+              ]
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusDot(Color color) {
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
     );
   }
 
@@ -493,19 +540,80 @@ class _MonitoringPageState extends State<MonitoringPage>
               ),
             ),
           ),
-
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
-                MonitoringHeader(
-                  pondName: widget.pondName,
-                  onProfileTap: () => _showProfileSheet(context),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.waves,
+                            color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "PondStat",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          _buildSyncStatus(),
+                        ],
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => _showProfileSheet(context),
+                        child: const Icon(Icons.person_outline,
+                            color: Colors.white, size: 30),
+                      ),
+                    ],
+                  ),
                 ),
-
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20.0, vertical: 5),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Monitoring",
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.pondName,
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 15),
-
                 Expanded(
                   child: SingleChildScrollView(
                     child: Padding(
@@ -514,121 +622,39 @@ class _MonitoringPageState extends State<MonitoringPage>
                         children: [
                           Card(
                             elevation: 4,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
                             child: Padding(
                               padding: const EdgeInsets.all(8.0),
                               child: Column(
                                 children: [
-                                  StreamBuilder<QuerySnapshot>(
-                                    stream: FirestoreHelper.measurementsCollection
-                                        .where('pondId', isEqualTo: widget.pondId)
-                                        .snapshots(includeMetadataChanges: true),
-                                    builder: (context, snapshot) {
-                                      Map<DateTime, Set<String>> eventsMap = {};
-
-                                      if (snapshot.hasData) {
-                                        for (var doc in snapshot.data!.docs) {
-                                          final data = doc.data() as Map<String, dynamic>;
-                                          final timestamp = data['timestamp'] as Timestamp?;
-                                          final type = data['type'] as String?;
-
-                                          if (timestamp != null && type != null) {
-                                            final date = timestamp.toDate();
-                                            final normalizedDate = DateTime.utc(
-                                                date.year, date.month, date.day);
-
-                                            if (!eventsMap.containsKey(normalizedDate)) {
-                                              eventsMap[normalizedDate] = {};
-                                            }
-                                            eventsMap[normalizedDate]!.add(type);
-                                          }
-                                        }
-                                      }
-
-                                      return TableCalendar(
-                                        firstDay: DateTime.utc(2020, 1, 1),
-                                        lastDay: DateTime.utc(2030, 12, 31),
-                                        focusedDay: _focusedDay,
-                                        availableCalendarFormats: const {
-                                          CalendarFormat.month: 'Month'
-                                        },
-                                        headerStyle: const HeaderStyle(
-                                          titleCentered: false,
-                                          formatButtonVisible: false,
-                                          titleTextStyle: TextStyle(
-                                              fontSize: 16, fontWeight: FontWeight.bold),
-                                        ),
-                                        calendarStyle: const CalendarStyle(
-                                          cellMargin: EdgeInsets.all(8),
-                                          selectedDecoration: BoxDecoration(
-                                            color: Color(0xFF0077C2),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          todayDecoration: BoxDecoration(
-                                            color: Colors.blueAccent,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        selectedDayPredicate: (day) =>
-                                            isSameDay(_selectedDay, day),
-                                        onDaySelected: (selectedDay, focusedDay) {
-                                          setState(() {
-                                            _selectedDay = DateTime.utc(
-                                                selectedDay.year,
-                                                selectedDay.month,
-                                                selectedDay.day);
-                                            _focusedDay = focusedDay;
-                                          });
-                                        },
-                                        calendarBuilders: CalendarBuilders(
-                                          markerBuilder: (context, date, events) {
-                                            final normalizedDate = DateTime.utc(
-                                                date.year, date.month, date.day);
-                                            final types = eventsMap[normalizedDate] ?? {};
-
-                                            final hasDaily = types.contains('daily');
-                                            final hasWeekly = types.contains('weekly');
-                                            final hasBiweekly = types.contains('biweekly');
-
-                                            List<Widget> activeDots = [];
-
-                                            if (hasDaily) {
-                                              activeDots.add(_buildStatusDot(Colors.green));
-                                            }
-                                            if (hasWeekly) {
-                                              activeDots.add(_buildStatusDot(Colors.amber));
-                                            }
-                                            if (hasBiweekly) {
-                                              activeDots.add(_buildStatusDot(Colors.blue));
-                                            }
-
-                                            return Positioned(
-                                              bottom: 1,
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: activeDots
-                                                    .map((dot) => Padding(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 1.0),
-                                                          child: dot,
-                                                        ))
-                                                    .toList(),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      );
+                                  MonitoringCalendar(
+                                    pondId: widget.pondId,
+                                    focusedDay: _focusedDay,
+                                    selectedDay: _selectedDay,
+                                    onDaySelected: (selectedDay, focusedDay) {
+                                      setState(() {
+                                        _selectedDay = DateTime.utc(
+                                            selectedDay.year,
+                                            selectedDay.month,
+                                            selectedDay.day);
+                                        _focusedDay = focusedDay;
+                                      });
                                     },
                                   ),
                                   const Divider(),
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 8.0, horizontal: 16.0),
                                     child: Row(
                                       children: const [
-                                        Icon(Icons.circle, color: Colors.blueAccent, size: 12),
+                                        Icon(Icons.circle,
+                                            color: Colors.blueAccent, size: 12),
                                         SizedBox(width: 8),
                                         Text(
                                           "Dates with records",
-                                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                                          style: TextStyle(
+                                              color: Colors.grey, fontSize: 12),
                                         ),
                                       ],
                                     ),
@@ -637,9 +663,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 20),
-
                           Container(
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
@@ -690,9 +714,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                               ],
                             ),
                           ),
-
                           const SizedBox(height: 10),
-
                           SizedBox(
                             height: 400,
                             child: TabBarView(
@@ -714,12 +736,14 @@ class _MonitoringPageState extends State<MonitoringPage>
           ),
         ],
       ),
-      floatingActionButton: canEdit ? FloatingActionButton(
-        backgroundColor: customBlue,
-        shape: const CircleBorder(),
-        onPressed: _showAddDataOverlay,
-        child: const Icon(Icons.add, color: Colors.white, size: 30),
-      ) : null,
+      floatingActionButton: canEdit
+          ? FloatingActionButton(
+              backgroundColor: customBlue,
+              shape: const CircleBorder(),
+              onPressed: _showAddDataOverlay,
+              child: const Icon(Icons.add, color: Colors.white, size: 30),
+            )
+          : null,
     );
   }
 
@@ -728,7 +752,8 @@ class _MonitoringPageState extends State<MonitoringPage>
       return const Center(child: Text("Select a date to view data"));
     }
 
-    final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
+    final String dateKey =
+        "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirestoreHelper.measurementsCollection
@@ -738,40 +763,16 @@ class _MonitoringPageState extends State<MonitoringPage>
           .orderBy('recordedAt', descending: true)
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) {
+          return Center(child: Text("Error: ${snapshot.error}"));
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.inbox_outlined,
-                  size: 64,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  "No $type data yet",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "Tap the '+' button below to record your first entry.",
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
-                  ),
-                ),
-              ],
-            ),
-          );
+          return Center(child: Text("No $type data for this date."));
         }
 
         return ListView.builder(
@@ -792,56 +793,13 @@ class _MonitoringPageState extends State<MonitoringPage>
               time: time,
               title: title,
               content: content,
-              groupDocs: [doc],
               canEdit: canEdit,
+              groupDocs: [doc],
               onEdit: () => _showEditDataDialog([doc]),
-              onDelete: () => _confirmGroupDelete([doc]),
             );
           },
         );
       },
-    );
-  }
-
-  void _confirmGroupDelete(List<QueryDocumentSnapshot> docs) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Data"),
-        content: const Text("Are you sure you want to delete this measurement?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(context);
-              final batch = FirebaseFirestore.instance.batch();
-              for (var doc in docs) {
-                batch.delete(doc.reference);
-              }
-              batch.commit();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Entry deleted")),
-              );
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusDot(Color color) {
-    return Container(
-      width: 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
     );
   }
 }
