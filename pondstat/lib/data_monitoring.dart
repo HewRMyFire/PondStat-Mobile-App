@@ -61,8 +61,6 @@ class _MonitoringPageState extends State<MonitoringPage>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     
-    // [FIXED] Initialize _selectedDay to UTC normalized date
-    // This ensures data added immediately (before tapping calendar) matches the keys used for dots.
     final now = DateTime.now();
     _focusedDay = now;
     _selectedDay = DateTime.utc(now.year, now.month, now.day);
@@ -109,7 +107,6 @@ class _MonitoringPageState extends State<MonitoringPage>
 
     final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
-    // [FIXED] Use FirestoreHelper
     await FirestoreHelper.measurementsCollection.add({
       'pond': widget.pondLetter,
       'dateKey': dateKey,
@@ -264,6 +261,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                   if (_tabController.index == 1) type = 'weekly';
                   if (_tabController.index == 2) type = 'biweekly';
 
+                  // FIRE AND FORGET!
+                  // We removed the .then() block. Now it triggers the save in the background.
                   _saveDataToFirestore(
                     label: label,
                     unit: unit,
@@ -271,20 +270,20 @@ class _MonitoringPageState extends State<MonitoringPage>
                     averageValue: avg,
                     type: type,
                     pointValues: pointValues,
-                  ).then((_) {
-                    if (mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Saved $label: $avg $unit")),
-                      );
-                    }
-                  }).catchError((error) {
+                  ).catchError((error) {
+                    // Only show error if the background save genuinely fails later
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text("Failed to save: $error")),
                       );
                     }
                   });
+
+                  // CLOSE DIALOG IMMEDIATELY! (Even if offline)
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Saved $label: $avg $unit")),
+                  );
                 },
                 child: const Text("Save"),
               )
@@ -362,48 +361,48 @@ class _MonitoringPageState extends State<MonitoringPage>
             ),
             ElevatedButton(
               onPressed: () async {
-                try {
-                  final batch = FirebaseFirestore.instance.batch();
+                final batch = FirebaseFirestore.instance.batch();
 
-                  for (var doc in docs) {
-                    final controllersMap = groupControllers[doc.id];
-                    if (controllersMap == null) continue;
+                for (var doc in docs) {
+                  final controllersMap = groupControllers[doc.id];
+                  if (controllersMap == null) continue;
 
-                    double sum = 0;
-                    int count = 0;
-                    Map<String, double> newPointValues = {};
+                  double sum = 0;
+                  int count = 0;
+                  Map<String, double> newPointValues = {};
 
-                    for (var p in points) {
-                      final text = controllersMap[p]?.text;
-                      if (text != null && text.isNotEmpty) {
-                        final val = double.tryParse(text);
-                        if (val != null) {
-                          sum += val;
-                          count++;
-                          newPointValues[p] = val;
-                        }
+                  for (var p in points) {
+                    final text = controllersMap[p]?.text;
+                    if (text != null && text.isNotEmpty) {
+                      final val = double.tryParse(text);
+                      if (val != null) {
+                        sum += val;
+                        count++;
+                        newPointValues[p] = val;
                       }
                     }
-
-                    if (count > 0) {
-                      double newAvg = sum / count;
-                      newAvg = double.parse(newAvg.toStringAsFixed(2));
-
-                      batch.update(doc.reference, {
-                        'pointValues': newPointValues,
-                        'value': newAvg,
-                      });
-                    }
                   }
-                  
+
+                  if (count > 0) {
+                    double newAvg = sum / count;
+                    newAvg = double.parse(newAvg.toStringAsFixed(2));
+
+                    batch.update(doc.reference, {
+                      'pointValues': newPointValues,
+                      'value': newAvg,
+                    });
+                  }
+                }
+                
+                // POP IMMEDIATELY! Do not wait for the batch to commit to the server.
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Points updated & Average recalculated")),
+                );
+
+                try {
+                  // Fire and forget the commit.
                   await batch.commit();
-
-                  if (mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Points updated & Average recalculated")),
-                    );
-                  }
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -438,16 +437,12 @@ class _MonitoringPageState extends State<MonitoringPage>
       default: return const Text("Select a tab to add data.");
     }
 
-    // [FIXED] Calculate aspect ratio dynamically for better responsiveness
-    // Assumes 2 columns. 
-    // width = (Screen Width - Padding (32) - Spacing(10)) / 2
-    // Height approx 70-80px per card is good for touch targets
     double screenWidth = MediaQuery.of(context).size.width;
     int crossAxisCount = 2;
     double padding = 32.0;
     double spacing = 10.0;
     double itemWidth = (screenWidth - padding - spacing) / crossAxisCount;
-    double itemHeight = 75.0; // Fixed sensible height for the card
+    double itemHeight = 75.0; 
     double childAspectRatio = itemWidth / itemHeight;
 
     return GridView.builder(
@@ -457,7 +452,7 @@ class _MonitoringPageState extends State<MonitoringPage>
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: spacing,
         mainAxisSpacing: spacing,
-        childAspectRatio: childAspectRatio, // Use calculated ratio
+        childAspectRatio: childAspectRatio, 
       ),
       itemCount: parameters.length,
       itemBuilder: (context, i) {
@@ -478,13 +473,48 @@ class _MonitoringPageState extends State<MonitoringPage>
                         param['label'] as String,
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
-                        maxLines: 2, // Allow text to wrap if needed
+                        maxLines: 2, 
                       ),
                     ),
                   ],
                 ),
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSyncStatus() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirestoreHelper.measurementsCollection
+          .limit(1)
+          .snapshots(includeMetadataChanges: true),
+      builder: (context, snapshot) {
+        bool hasPendingWrites = false;
+        
+        if (snapshot.hasData) {
+          hasPendingWrites = snapshot.data!.metadata.hasPendingWrites;
+        }
+
+        return Tooltip(
+          message: hasPendingWrites ? "Saving locally (Offline)" : "Synced to Cloud",
+          child: Row(
+            children: [
+              Icon(
+                hasPendingWrites ? Icons.cloud_upload_outlined : Icons.cloud_done_outlined,
+                color: hasPendingWrites ? Colors.orange[300] : Colors.lightGreenAccent,
+                size: 20,
+              ),
+              if (hasPendingWrites) ...[
+                const SizedBox(width: 4),
+                Text(
+                  "Offline mode",
+                  style: TextStyle(color: Colors.orange[300], fontSize: 10),
+                )
+              ]
+            ],
           ),
         );
       },
@@ -530,8 +560,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                       
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
+                        children: [
+                          const Text(
                             "PondStat",
                             style: TextStyle(
                               color: Colors.white,
@@ -539,13 +569,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Text(
-                            "Pond Parameters",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
+                          _buildSyncStatus(), 
                         ],
                       ),
                       const Spacer(),
@@ -599,10 +623,9 @@ class _MonitoringPageState extends State<MonitoringPage>
                               child: Column(
                                 children: [
                                   StreamBuilder<QuerySnapshot>(
-                                    // [FIXED] Use FirestoreHelper
                                     stream: FirestoreHelper.measurementsCollection
                                         .where('pond', isEqualTo: widget.pondLetter)
-                                        .snapshots(),
+                                        .snapshots(includeMetadataChanges: true), 
                                     builder: (context, snapshot) {
                                       Map<DateTime, Set<String>> eventsMap = {};
                                       
@@ -614,7 +637,6 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                                           if (timestamp != null && type != null) {
                                             final date = timestamp.toDate();
-                                            // Ensure UTC normalization for the calendar markers
                                             final normalizedDate = DateTime.utc(
                                                 date.year, date.month, date.day);
                                             
@@ -700,7 +722,7 @@ class _MonitoringPageState extends State<MonitoringPage>
                                       );
                                     },
                                   ),
-                                                                    const Divider(),
+                                  const Divider(),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
                                     child: Row(
@@ -729,14 +751,14 @@ class _MonitoringPageState extends State<MonitoringPage>
                             child: TabBar(
                               controller: _tabController,
                               indicator: BoxDecoration(
-                                color: const Color(0xFF0077C2), // customBlue
+                                color: const Color(0xFF0077C2), 
                                 borderRadius: BorderRadius.circular(50), 
                               ),
                               indicatorSize: TabBarIndicatorSize.tab, 
                               labelColor: Colors.white,
                               unselectedLabelColor: Colors.grey,
                               dividerColor: Colors.transparent,
-                              labelPadding: EdgeInsets.zero, // Remove default padding to center custom rows
+                              labelPadding: EdgeInsets.zero, 
                               tabs: [
                                 Tab(
                                   child: Row(
@@ -812,13 +834,12 @@ class _MonitoringPageState extends State<MonitoringPage>
     final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     return StreamBuilder<QuerySnapshot>(
-      // [FIXED] Use FirestoreHelper
       stream: FirestoreHelper.measurementsCollection
           .where('pond', isEqualTo: widget.pondLetter)
           .where('type', isEqualTo: type)
           .where('dateKey', isEqualTo: dateKey)
-          .orderBy('recordedAt', descending: true)
-          .snapshots(),
+          .orderBy('recordedAt', descending: true) 
+          .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
         if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
@@ -826,39 +847,28 @@ class _MonitoringPageState extends State<MonitoringPage>
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) return Center(child: Text("No $type data for this date."));
 
-        final Map<String, List<QueryDocumentSnapshot>> groupedData = {};
-        for (var doc in docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final time = data['timeString'] ?? 'Unknown Time';
-          if (!groupedData.containsKey(time)) {
-            groupedData[time] = [];
-          }
-          groupedData[time]!.add(doc);
-        }
+        return ListView.builder(
+          padding: const EdgeInsets.only(top: 8, bottom: 80), 
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final data = doc.data() as Map<String, dynamic>;
+            final time = data['timeString'] ?? 'Unknown Time';
+            final parameter = data['parameter'] ?? 'Unknown Parameter';
+            final value = data['value']?.toString() ?? '0';
+            final unit = data['unit'] ?? '';
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            children: groupedData.entries.map((entry) {
-              final time = entry.key;
-              final groupDocs = entry.value;
+            final title = "$parameter";
+            final content = "$value $unit\n(Avg across recorded points)";
 
-              String content = groupDocs.map((doc) {
-                final d = doc.data() as Map<String, dynamic>;
-                return "${d['parameter']}: ${d['value']}${d['unit']}";
-              }).join('\n'); 
-              
-              content += "\n(Avg across Points A, B, C, D)";
-
-              return _infoCard(time, content, groupDocs);
-            }).toList(),
-          ),
+            return _infoCard(time, title, content, [doc]);
+          },
         );
       },
     );
   }
 
-  Widget _infoCard(String title, String content, List<QueryDocumentSnapshot> groupDocs) {
+  Widget _infoCard(String time, String title, String content, List<QueryDocumentSnapshot> groupDocs) {
     return SizedBox(
       width: double.infinity,
       child: Card(
@@ -873,8 +883,9 @@ class _MonitoringPageState extends State<MonitoringPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(time, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 8),
+                    Text(title, style: const TextStyle(fontSize: 14)),
                     Text(content, style: const TextStyle(fontSize: 14)),
                   ],
                 ),
@@ -906,7 +917,7 @@ class _MonitoringPageState extends State<MonitoringPage>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Delete Data"),
-        content: const Text("Delete all measurements for this time entry?"),
+        content: const Text("Are you sure you want to delete this measurement?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -915,12 +926,12 @@ class _MonitoringPageState extends State<MonitoringPage>
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(context); // Close dialog immediately
               final batch = FirebaseFirestore.instance.batch();
               for (var doc in docs) {
-                batch.delete(doc.reference);
+                batch.delete(doc.reference); 
               }
-              batch.commit();
+              batch.commit(); // Fire and forget!
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("Entry deleted")),
               );
@@ -931,6 +942,7 @@ class _MonitoringPageState extends State<MonitoringPage>
       ),
     );
   }
+
   Widget _buildStatusDot(Color color) {
     return Container(
       width: 6,
