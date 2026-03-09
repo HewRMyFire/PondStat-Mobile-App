@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../main.dart';
-import '../profile_bottom_sheet.dart';
+import '../profile/profile_bottom_sheet.dart';
 import '../firebase/firestore_helper.dart';
 import 'monitoring_parameters.dart';
 import 'measurement_card.dart';
 import 'monitoring_calendar.dart';
+import '../pond_background.dart';
 
 class MonitoringPage extends StatefulWidget {
   final String pondId;
@@ -25,18 +26,28 @@ class MonitoringPage extends StatefulWidget {
 }
 
 class _MonitoringPageState extends State<MonitoringPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late TabController _tabController;
+  late AnimationController _shimmerController;
 
   late DateTime _focusedDay;
   DateTime? _selectedDay;
 
-  bool get canEdit => widget.userRole == 'owner' || widget.userRole == 'editor';
+  bool _isFabVisible = true;
+
+  bool get canEdit =>
+      widget.userRole == 'owner' || widget.userRole == 'editor';
+  final Color customBlue = const Color(0xFF0077C2);
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
 
     final now = DateTime.now();
     _focusedDay = now;
@@ -46,6 +57,7 @@ class _MonitoringPageState extends State<MonitoringPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _shimmerController.dispose();
     super.dispose();
   }
 
@@ -56,16 +68,9 @@ class _MonitoringPageState extends State<MonitoringPage>
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return ProfileBottomSheet(
-          isTeamLeader: widget.userRole == 'owner',
-          assignedPond: null,
-          onRoleChanged: (isLeader) {
-            Navigator.pop(context);
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const AuthWrapper()),
-              (route) => false,
-            );
-          },
+          currentPondId: widget.pondId,
+          currentPondName: widget.pondName,
+          currentUserRole: widget.userRole,
         );
       },
     );
@@ -105,7 +110,8 @@ class _MonitoringPageState extends State<MonitoringPage>
     if (!canEdit) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('You need Editor or Owner permissions to add data.')),
+          content: Text('You need Editor or Owner permissions to add data.'),
+        ),
       );
       return;
     }
@@ -113,7 +119,8 @@ class _MonitoringPageState extends State<MonitoringPage>
     if (_selectedDay == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please select a day on the calendar first.')),
+          content: Text('Please select a day on the calendar first.'),
+        ),
       );
       return;
     }
@@ -121,32 +128,136 @@ class _MonitoringPageState extends State<MonitoringPage>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (BuildContext context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            top: 20,
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ParameterItem? selectedParameter;
+        TimeOfDay? selectedTime = TimeOfDay.now();
+        final List<String> points = const ['A', 'B', 'C', 'D'];
+        Map<String, TextEditingController> valueControllers = {
+          for (var p in points) p: TextEditingController()
+        };
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                top: 24,
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (selectedParameter != null)
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            padding: EdgeInsets.zero,
+                            alignment: Alignment.centerLeft,
+                            onPressed: () => setSheetState(
+                                () => selectedParameter = null),
+                          ),
+                        Expanded(
+                          child: Text(
+                            selectedParameter == null
+                                ? "Select Parameter"
+                                : "Record ${selectedParameter!.label}",
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.grey),
+                          onPressed: () => Navigator.pop(context),
+                        )
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    if (selectedParameter == null)
+                      _buildParameterGrid((param) {
+                        setSheetState(() => selectedParameter = param);
+                      })
+                    else
+                      _buildInputForm(
+                        parameter: selectedParameter!,
+                        selectedTime: selectedTime!,
+                        points: points,
+                        controllers: valueControllers,
+                        onTimeChanged: (newTime) =>
+                            setSheetState(() => selectedTime = newTime),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildParameterGrid(Function(ParameterItem) onSelect) {
+    List<ParameterItem> parameters = MonitoringParameters.getParametersByIndex(
+      _tabController.index,
+    );
+
+    if (parameters.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Text("No parameters for this tab."),
+      );
+    }
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 2.5,
+      ),
+      itemCount: parameters.length,
+      itemBuilder: (context, i) {
+        final param = parameters[i];
+        return InkWell(
+          onTap: () => onSelect(param),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
               children: [
-                Text(
-                  "Add Data for ${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}",
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold),
+                Icon(
+                  param.icon,
+                  color: param.color,
+                  size: 24,
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  "Select Parameter for ${MonitoringParameters.getTabTitle(_tabController.index)}",
-                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    param.label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
                 ),
-                const Divider(),
-                _buildOverlayContent(_tabController.index),
-                const SizedBox(height: 10),
               ],
             ),
           ),
@@ -155,139 +266,220 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
-  void _showParameterInputOverlay(Map<String, dynamic> parameter) {
-    Navigator.pop(context);
+  Widget _buildInputForm({
+    required ParameterItem parameter,
+    required TimeOfDay selectedTime,
+    required List<String> points,
+    required Map<String, TextEditingController> controllers,
+    required Function(TimeOfDay) onTimeChanged,
+  }) {
+    String rangeText = '';
+    if (parameter.minVal != null && parameter.maxVal != null) {
+      rangeText = 'Range: ${parameter.minVal} - ${parameter.maxVal}';
+    } else if (parameter.minVal != null) {
+      rangeText = 'Min: ${parameter.minVal}';
+    }
 
-    final String label = parameter['label'];
-    final String unit = parameter['unit'];
-    final TextInputType keyboardType = parameter['keyboardType'];
-    final List<String> points = const ['A', 'B', 'C', 'D'];
-    final String dateString =
-        "${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}";
-
-    TimeOfDay? selectedTime = TimeOfDay.now();
-    Map<String, TextEditingController> valueControllers = {
-      for (var p in points) p: TextEditingController()
-    };
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            scrollable: true,
-            title: Text('Record $label ${unit.isNotEmpty ? "($unit)" : ""}'),
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: selectedTime,
+            );
+            if (picked != null) onTimeChanged(picked);
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Date: $dateString"),
-                const Divider(),
-                TextButton(
-                  onPressed: () async {
-                    final TimeOfDay? picked = await showTimePicker(
-                      context: context,
-                      initialTime: selectedTime ?? TimeOfDay.now(),
-                    );
-                    if (picked != null) {
-                      setState(() => selectedTime = picked);
-                    }
-                  },
-                  child: Text(selectedTime != null
-                      ? "Selected Time: ${selectedTime!.format(context)}"
-                      : "Select Time"),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, color: Colors.blue),
+                    const SizedBox(width: 12),
+                    Text(
+                      "Time: ${selectedTime.format(context)}",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                Column(
-                  children: points.map((p) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: TextField(
-                        controller: valueControllers[p],
-                        keyboardType: keyboardType,
-                        decoration: InputDecoration(
-                          labelText: "Point $p Value ($unit)",
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                )
+                const Text(
+                  "Change",
+                  style: TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel"),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  double sum = 0;
-                  int count = 0;
-                  Map<String, double> pointValues = {};
-
-                  for (var p in points) {
-                    final val = double.tryParse(valueControllers[p]!.text);
-                    if (val != null) {
-                      sum += val;
-                      count++;
-                      pointValues[p] = val;
-                    }
-                  }
-
-                  if (count == 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text("Please enter at least one value")),
-                    );
-                    return;
-                  }
-
-                  double avg = sum / count;
-                  avg = double.parse(avg.toStringAsFixed(2));
-
-                  String type = 'daily';
-                  if (_tabController.index == 1) type = 'weekly';
-                  if (_tabController.index == 2) type = 'biweekly';
-
-                  _saveDataToFirestore(
-                    label: label,
-                    unit: unit,
-                    timeString: selectedTime!.format(context),
-                    averageValue: avg,
-                    type: type,
-                    pointValues: pointValues,
-                  ).catchError((error) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Failed to save: $error")),
-                      );
-                    }
-                  });
-
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Saved $label: $avg $unit")),
-                  );
-                },
-                child: const Text("Save"),
-              )
-            ],
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              "Enter values per point ${parameter.unit.isNotEmpty ? '(${parameter.unit})' : ''}:",
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            if (rangeText.isNotEmpty)
+              Text(
+                rangeText,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: points
+              .map(
+                (p) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: TextField(
+                      controller: controllers[p],
+                      keyboardType: parameter.keyboardType,
+                      textAlign: TextAlign.center,
+                      textInputAction: p == points.last
+                          ? TextInputAction.done
+                          : TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: "Pt $p",
+                        hintText: parameter.hint.split(' ').last,
+                        hintStyle: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontSize: 13,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 32),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            backgroundColor: customBlue,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          onPressed: () => _processAndSaveForm(
+            parameter,
+            selectedTime,
+            points,
+            controllers,
+          ),
+          child: const Text(
+            "Save Measurement",
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        )
+      ],
+    );
+  }
+
+  void _processAndSaveForm(
+    ParameterItem parameter,
+    TimeOfDay time,
+    List<String> points,
+    Map<String, TextEditingController> controllers,
+  ) {
+    double sum = 0;
+    int count = 0;
+    Map<String, double> pointValues = {};
+
+    for (var p in points) {
+      final textVal = controllers[p]!.text.trim();
+      if (textVal.isNotEmpty) {
+        final val = double.tryParse(textVal);
+
+        if (val == null &&
+            parameter.keyboardType != TextInputType.text) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Point $p has an invalid number")),
+          );
+          return;
+        }
+
+        if (val != null) {
+          if (parameter.minVal != null && val < parameter.minVal!) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    "Point $p is below the minimum (${parameter.minVal})"),
+              ),
+            );
+            return;
+          }
+          if (parameter.maxVal != null && val > parameter.maxVal!) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    "Point $p is above the maximum (${parameter.maxVal})"),
+              ),
+            );
+            return;
+          }
+
+          sum += val;
+          count++;
+          pointValues[p] = val;
+        }
+      }
+    }
+
+    if (count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("Please enter at least one valid value")),
+      );
+      return;
+    }
+
+    double avg = double.parse((sum / count).toStringAsFixed(2));
+    String type = ['daily', 'weekly', 'biweekly'][_tabController.index];
+
+    _saveDataToFirestore(
+      label: parameter.label,
+      unit: parameter.unit,
+      timeString: time.format(context),
+      averageValue: avg,
+      type: type,
+      pointValues: pointValues,
+    );
+
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Saved ${parameter.label}: $avg ${parameter.unit}"),
+      ),
     );
   }
 
   void _showEditDataDialog(List<QueryDocumentSnapshot> docs) {
-    if (!canEdit) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('You need Editor or Owner permissions to edit data.')),
-      );
-      return;
-    }
+    if (!canEdit) return;
 
     final Map<String, Map<String, TextEditingController>> groupControllers = {};
     final List<String> points = const ['A', 'B', 'C', 'D'];
@@ -295,60 +487,67 @@ class _MonitoringPageState extends State<MonitoringPage>
     for (var doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
       final pointValues = data['pointValues'] as Map<String, dynamic>? ?? {};
-
-      groupControllers[doc.id] = {};
-
-      for (var p in points) {
-        String initialValue = pointValues[p]?.toString() ?? '';
-        groupControllers[doc.id]![p] =
-            TextEditingController(text: initialValue);
-      }
+      groupControllers[doc.id] = {
+        for (var p in points)
+          p: TextEditingController(text: pointValues[p]?.toString() ?? '')
+      };
     }
 
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (context) {
         return AlertDialog(
           scrollable: true,
-          title: const Text('Edit Point Values'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Edit Measurements'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: docs.map((doc) {
               final data = doc.data() as Map<String, dynamic>;
-              final String label = data['parameter'];
-              final String unit = data['unit'] ?? '';
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("$label ($unit)",
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.blue)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: points.map((p) {
-                      return SizedBox(
-                        width: 60,
-                        child: TextField(
-                          controller: groupControllers[doc.id]![p],
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: p,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 8),
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const Divider(height: 24),
-                ],
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "${data['parameter']} (${data['unit'] ?? ''})",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: customBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: points
+                          .map(
+                            (p) => Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: TextField(
+                                  controller: groupControllers[doc.id]![p],
+                                  keyboardType: const TextInputType
+                                      .numberWithOptions(decimal: true),
+                                  textAlign: TextAlign.center,
+                                  decoration: InputDecoration(
+                                    labelText: p,
+                                    isDense: true,
+                                    border: OutlineInputBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
               );
             }).toList(),
           ),
@@ -358,6 +557,10 @@ class _MonitoringPageState extends State<MonitoringPage>
               child: const Text("Cancel"),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: customBlue,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () async {
                 final batch = FirebaseFirestore.instance.batch();
 
@@ -382,9 +585,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                   }
 
                   if (count > 0) {
-                    double newAvg = sum / count;
-                    newAvg = double.parse(newAvg.toStringAsFixed(2));
-
+                    double newAvg =
+                        double.parse((sum / count).toStringAsFixed(2));
                     batch.update(doc.reference, {
                       'pointValues': newPointValues,
                       'value': newAvg,
@@ -394,16 +596,14 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("Points updated & Average recalculated")),
+                  const SnackBar(content: Text("Measurements updated")),
                 );
-
                 try {
                   await batch.commit();
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Error updating: $e")),
+                      SnackBar(content: Text("Error: $e")),
                     );
                   }
                 }
@@ -416,214 +616,174 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
-  Widget _buildOverlayContent(int index) {
-    List<Map<String, dynamic>> parameters =
-        MonitoringParameters.getParametersByIndex(index);
-    if (parameters.isEmpty) return const Text("Select a tab to add data.");
-
-    double screenWidth = MediaQuery.of(context).size.width;
-    int crossAxisCount = 2;
-    double padding = 32.0;
-    double spacing = 10.0;
-    double itemWidth = (screenWidth - padding - spacing) / crossAxisCount;
-    double itemHeight = 75.0;
-    double childAspectRatio = itemWidth / itemHeight;
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: spacing,
-        mainAxisSpacing: spacing,
-        childAspectRatio: childAspectRatio,
-      ),
-      itemCount: parameters.length,
-      itemBuilder: (context, i) {
-        final param = parameters[i];
-        return InkWell(
-          onTap: () => _showParameterInputOverlay(param),
-          child: Card(
-            elevation: 2,
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Row(
-                  children: [
-                    Icon(param['icon'] as IconData, color: Colors.blue),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        param['label'] as String,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.bold),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildSyncStatus() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirestoreHelper.measurementsCollection
           .limit(1)
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
-        bool hasPendingWrites = false;
-
-        if (snapshot.hasData) {
-          hasPendingWrites = snapshot.data!.metadata.hasPendingWrites;
-        }
-
-        return Tooltip(
-          message:
-              hasPendingWrites ? "Saving locally (Offline)" : "Synced to Cloud",
-          child: Row(
-            children: [
-              Icon(
-                hasPendingWrites
-                    ? Icons.cloud_upload_outlined
-                    : Icons.cloud_done_outlined,
-                color: hasPendingWrites
-                    ? Colors.orange[300]
-                    : Colors.lightGreenAccent,
-                size: 20,
-              ),
-              if (hasPendingWrites) ...[
-                const SizedBox(width: 4),
-                Text(
-                  "Offline mode",
-                  style: TextStyle(color: Colors.orange[300], fontSize: 10),
-                )
-              ]
-            ],
-          ),
+        bool hasPendingWrites = snapshot.hasData
+            ? snapshot.data!.metadata.hasPendingWrites
+            : false;
+        return Row(
+          children: [
+            Icon(
+              hasPendingWrites
+                  ? Icons.cloud_upload_outlined
+                  : Icons.cloud_done_outlined,
+              color: hasPendingWrites ? Colors.orange : Colors.green,
+              size: 20,
+            ),
+            if (hasPendingWrites) ...[
+              const SizedBox(width: 4),
+              Text(
+                "Saving offline",
+                style: TextStyle(
+                  color: Colors.orange[800],
+                  fontSize: 10,
+                ),
+              )
+            ]
+          ],
         );
       },
     );
   }
 
-  Widget _buildStatusDot(Color color) {
-    return Container(
-      width: 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    const Color customBlue = Color(0xFF0077C2);
-
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          Container(
-            height: 200,
-            decoration: const BoxDecoration(
-              color: customBlue,
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-            ),
-          ),
+          const PondBackground(),
           SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          shape: BoxShape.circle,
+            child: NotificationListener<UserScrollNotification>(
+              onNotification: (notification) {
+                if (notification.direction == ScrollDirection.reverse) {
+                  if (_isFabVisible) {
+                    setState(() => _isFabVisible = false);
+                  }
+                } else if (notification.direction == ScrollDirection.forward) {
+                  if (!_isFabVisible) {
+                    setState(() => _isFabVisible = true);
+                  }
+                }
+                return true;
+              },
+              child: NestedScrollView(
+                headerSliverBuilder: (context, innerBoxIsScrolled) {
+                  return [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20.0,
+                          vertical: 10,
                         ),
-                        child: const Icon(Icons.waves,
-                            color: Colors.white, size: 24),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "PondStat",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.arrow_back,
+                                color: Colors.black87,
+                              ),
+                              onPressed: () => Navigator.pop(context),
                             ),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: customBlue.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.waves,
+                                color: customBlue,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "PondStat",
+                                  style: TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                _buildSyncStatus(),
+                              ],
+                            ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => _showProfileSheet(context),
+                              child: const Icon(
+                                Icons.person_outline,
+                                color: Colors.black87,
+                                size: 30,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20.0,
+                          vertical: 5,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          _buildSyncStatus(),
-                        ],
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => _showProfileSheet(context),
-                        child: const Icon(Icons.person_outline,
-                            color: Colors.white, size: 30),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20.0, vertical: 5),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Monitoring",
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Monitoring",
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                widget.pondName,
+                                style: const TextStyle(
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.pondName,
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 15),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Column(
-                        children: [
-                          Card(
-                            elevation: 4,
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: customBlue.withOpacity(0.15),
+                                blurRadius: 30,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Card(
+                            elevation: 0,
+                            color: Colors.white.withOpacity(0.95),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16)),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                             child: Padding(
                               padding: const EdgeInsets.all(8.0),
                               child: Column(
@@ -635,26 +795,34 @@ class _MonitoringPageState extends State<MonitoringPage>
                                     onDaySelected: (selectedDay, focusedDay) {
                                       setState(() {
                                         _selectedDay = DateTime.utc(
-                                            selectedDay.year,
-                                            selectedDay.month,
-                                            selectedDay.day);
+                                          selectedDay.year,
+                                          selectedDay.month,
+                                          selectedDay.day,
+                                        );
                                         _focusedDay = focusedDay;
                                       });
                                     },
                                   ),
                                   const Divider(),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 8.0, horizontal: 16.0),
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: 8.0,
+                                      horizontal: 16.0,
+                                    ),
                                     child: Row(
-                                      children: const [
-                                        Icon(Icons.circle,
-                                            color: Colors.blueAccent, size: 12),
+                                      children: [
+                                        Icon(
+                                          Icons.circle,
+                                          color: Colors.blueAccent,
+                                          size: 10,
+                                        ),
                                         SizedBox(width: 8),
                                         Text(
                                           "Dates with records",
                                           style: TextStyle(
-                                              color: Colors.grey, fontSize: 12),
+                                            color: Colors.grey,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -663,87 +831,91 @@ class _MonitoringPageState extends State<MonitoringPage>
                               ),
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(50),
-                            ),
-                            child: TabBar(
-                              controller: _tabController,
-                              indicator: BoxDecoration(
-                                color: const Color(0xFF0077C2),
-                                borderRadius: BorderRadius.circular(50),
-                              ),
-                              indicatorSize: TabBarIndicatorSize.tab,
-                              labelColor: Colors.white,
-                              unselectedLabelColor: Colors.grey,
-                              dividerColor: Colors.transparent,
-                              labelPadding: EdgeInsets.zero,
-                              tabs: [
-                                Tab(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _buildStatusDot(Colors.green),
-                                      const SizedBox(width: 8),
-                                      const Text("Daily"),
-                                    ],
-                                  ),
-                                ),
-                                Tab(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _buildStatusDot(Colors.amber),
-                                      const SizedBox(width: 8),
-                                      const Text("Weekly"),
-                                    ],
-                                  ),
-                                ),
-                                Tab(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _buildStatusDot(Colors.blue),
-                                      const SizedBox(width: 8),
-                                      const Text("Biweekly"),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            height: 400,
-                            child: TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildStreamTab('daily'),
-                                _buildStreamTab('weekly'),
-                                _buildStreamTab('biweekly'),
-                              ],
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _SliverAppBarDelegate(
+                        TabBar(
+                          controller: _tabController,
+                          indicator: BoxDecoration(
+                            color: customBlue,
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          labelColor: Colors.white,
+                          unselectedLabelColor: Colors.grey.shade600,
+                          dividerColor: Colors.transparent,
+                          labelPadding: EdgeInsets.zero,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          tabs: [
+                            Tab(child: _buildTabLabel("Daily", Colors.green)),
+                            Tab(child: _buildTabLabel("Weekly", Colors.amber)),
+                            Tab(child: _buildTabLabel("Biweekly", Colors.blue)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ];
+                },
+                body: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildStreamTab('daily'),
+                    _buildStreamTab('weekly'),
+                    _buildStreamTab('biweekly'),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
       ),
       floatingActionButton: canEdit
-          ? FloatingActionButton(
-              backgroundColor: customBlue,
-              shape: const CircleBorder(),
-              onPressed: _showAddDataOverlay,
-              child: const Icon(Icons.add, color: Colors.white, size: 30),
+          ? AnimatedSlide(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              offset: _isFabVisible ? Offset.zero : const Offset(0, 2),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: _isFabVisible ? 1.0 : 0.0,
+                child: FloatingActionButton.extended(
+                  backgroundColor: customBlue,
+                  onPressed: _showAddDataOverlay,
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text(
+                    "Record Data",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
             )
           : null,
+    );
+  }
+
+  Widget _buildTabLabel(String text, Color dotColor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: dotColor,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ],
     );
   }
 
@@ -763,43 +935,123 @@ class _MonitoringPageState extends State<MonitoringPage>
           .orderBy('recordedAt', descending: true)
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text("Error: ${snapshot.error}"));
-        }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildSkeletonLoader();
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              "Error: ${snapshot.error}",
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
         }
 
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return Center(child: Text("No $type data for this date."));
-        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return _buildEmptyState(type);
 
-        return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 80),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final doc = docs[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final time = data['timeString'] ?? 'Unknown Time';
-            final parameter = data['parameter'] ?? 'Unknown Parameter';
-            final value = data['value']?.toString() ?? '0';
-            final unit = data['unit'] ?? '';
-
-            final title = "$parameter";
-            final content = "$value $unit\n(Avg across recorded points)";
-
-            return MeasurementCard(
-              time: time,
-              title: title,
-              content: content,
-              canEdit: canEdit,
-              groupDocs: [doc],
-              onEdit: () => _showEditDataDialog([doc]),
-            );
-          },
+        return RefreshIndicator(
+          color: customBlue,
+          onRefresh: () async =>
+              await Future.delayed(const Duration(milliseconds: 800)),
+          child: ListView.builder(
+            padding: const EdgeInsets.only(
+              top: 8,
+              bottom: 100,
+              left: 16,
+              right: 16,
+            ),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final data = docs[index].data() as Map<String, dynamic>;
+              return MeasurementCard(
+                time: data['timeString'] ?? 'Unknown Time',
+                title: data['parameter'] ?? 'Unknown Parameter',
+                content:
+                    "${data['value'] ?? '0'} ${data['unit'] ?? ''}\n(Avg across recorded points)",
+                canEdit: canEdit,
+                groupDocs: [docs[index]],
+                onEdit: () => _showEditDataDialog([docs[index]]),
+              );
+            },
+          ),
         );
       },
     );
   }
+
+  Widget _buildSkeletonLoader() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 3,
+      itemBuilder: (context, index) => FadeTransition(
+        opacity:
+            Tween<double>(begin: 0.4, end: 1.0).animate(_shimmerController),
+        child: Container(
+          height: 100,
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String type) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.assignment_outlined,
+            size: 64,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "No $type records",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Tap 'Record Data' to log a measurement.",
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar _tabBar;
+
+  _SliverAppBarDelegate(this._tabBar);
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height + 16;
+
+  @override
+  double get maxExtent => _tabBar.preferredSize.height + 16;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: Colors.white.withOpacity(0.9),
+      child: _tabBar,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
 }
