@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; 
-import 'main.dart';
-import 'default_dashboard.dart'; 
-import 'profile_bottom_sheet.dart'; 
-import 'firestore_helper.dart'; 
+import '../main.dart';
+import '../profile_bottom_sheet.dart';
+import '../firebase/firestore_helper.dart';
+import 'monitoring_parameters.dart';
+import 'measurement_card.dart';
+import 'monitoring_calendar.dart';
 
 class MonitoringPage extends StatefulWidget {
   final String pondId;
   final String pondName;
-  final String userRole; // e.g., 'owner', 'editor', 'viewer'
+  final String userRole;
 
   const MonitoringPage({
     super.key,
@@ -31,38 +31,13 @@ class _MonitoringPageState extends State<MonitoringPage>
   late DateTime _focusedDay;
   DateTime? _selectedDay;
 
-  final List<Map<String, dynamic>> _dailyParameters = const [
-    {'label': 'Water Temperature', 'icon': Icons.thermostat_outlined, 'unit': '°C', 'keyboardType': TextInputType.number},
-    {'label': 'Air Temperature', 'icon': Icons.air_outlined, 'unit': '°C', 'keyboardType': TextInputType.number},
-    {'label': 'pH Level', 'icon': Icons.science_outlined, 'unit': '', 'keyboardType': TextInputType.number},
-    {'label': 'Salinity', 'icon': Icons.waves_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Feeding Time', 'icon': Icons.local_dining_outlined, 'unit': 'kg', 'keyboardType': TextInputType.number},
-  ];
-
-  final List<Map<String, dynamic>> _weeklyParameters = const [
-    {'label': 'Microbe Count', 'icon': Icons.mic_outlined, 'unit': 'cells/ml', 'keyboardType': TextInputType.number},
-    {'label': 'Phytoplankton Count', 'icon': Icons.nature_outlined, 'unit': 'cells/ml', 'keyboardType': TextInputType.number},
-    {'label': 'Zooplankton Count', 'icon': Icons.pets_outlined, 'unit': 'ind/L', 'keyboardType': TextInputType.number},
-    {'label': 'Avg Body Weight', 'icon': Icons.fitness_center_outlined, 'unit': 'g', 'keyboardType': TextInputType.number},
-  ];
-
-  final List<Map<String, dynamic>> _biweeklyParameters = const [
-    {'label': 'Dissolved O2', 'icon': Icons.opacity_outlined, 'unit': 'mg/L', 'keyboardType': TextInputType.number},
-    {'label': 'Ammonia', 'icon': Icons.warning_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Nitrate', 'icon': Icons.water_drop_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Nitrite', 'icon': Icons.water_drop_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Alkalinity', 'icon': Icons.balance_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Phosphate', 'icon': Icons.data_usage_outlined, 'unit': 'ppm', 'keyboardType': TextInputType.number},
-    {'label': 'Ca-Mg Ratio', 'icon': Icons.ac_unit_outlined, 'unit': 'ratio', 'keyboardType': TextInputType.text},
-  ];
-
   bool get canEdit => widget.userRole == 'owner' || widget.userRole == 'editor';
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    
+
     final now = DateTime.now();
     _focusedDay = now;
     _selectedDay = DateTime.utc(now.year, now.month, now.day);
@@ -82,12 +57,12 @@ class _MonitoringPageState extends State<MonitoringPage>
       builder: (BuildContext context) {
         return ProfileBottomSheet(
           isTeamLeader: widget.userRole == 'owner',
-          assignedPond: null, // Legacy, keeping as null
+          assignedPond: null,
           onRoleChanged: (isLeader) {
             Navigator.pop(context);
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (context) => const AuthWrapper()), 
+              MaterialPageRoute(builder: (context) => const AuthWrapper()),
               (route) => false,
             );
           },
@@ -107,10 +82,11 @@ class _MonitoringPageState extends State<MonitoringPage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _selectedDay == null) return;
 
-    final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
+    final String dateKey =
+        "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     await FirestoreHelper.measurementsCollection.add({
-      'pondId': widget.pondId, // UPDATED: Now saves using the unique document ID
+      'pondId': widget.pondId,
       'dateKey': dateKey,
       'timestamp': Timestamp.fromDate(_selectedDay!),
       'recordedAt': FieldValue.serverTimestamp(),
@@ -128,14 +104,16 @@ class _MonitoringPageState extends State<MonitoringPage>
   void _showAddDataOverlay() {
     if (!canEdit) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You need Editor or Owner permissions to add data.')),
+        const SnackBar(
+            content: Text('You need Editor or Owner permissions to add data.')),
       );
       return;
     }
 
     if (_selectedDay == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a day on the calendar first.')),
+        const SnackBar(
+            content: Text('Please select a day on the calendar first.')),
       );
       return;
     }
@@ -158,11 +136,12 @@ class _MonitoringPageState extends State<MonitoringPage>
               children: [
                 Text(
                   "Add Data for ${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}",
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "Select Parameter for ${_getTabTitle(_tabController.index)}",
+                  "Select Parameter for ${MonitoringParameters.getTabTitle(_tabController.index)}",
                   style: const TextStyle(fontSize: 16, color: Colors.grey),
                 ),
                 const Divider(),
@@ -183,7 +162,8 @@ class _MonitoringPageState extends State<MonitoringPage>
     final String unit = parameter['unit'];
     final TextInputType keyboardType = parameter['keyboardType'];
     final List<String> points = const ['A', 'B', 'C', 'D'];
-    final String dateString = "${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}";
+    final String dateString =
+        "${_selectedDay!.month}/${_selectedDay!.day}/${_selectedDay!.year}";
 
     TimeOfDay? selectedTime = TimeOfDay.now();
     Map<String, TextEditingController> valueControllers = {
@@ -258,7 +238,8 @@ class _MonitoringPageState extends State<MonitoringPage>
 
                   if (count == 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Please enter at least one value")),
+                      const SnackBar(
+                          content: Text("Please enter at least one value")),
                     );
                     return;
                   }
@@ -302,7 +283,8 @@ class _MonitoringPageState extends State<MonitoringPage>
   void _showEditDataDialog(List<QueryDocumentSnapshot> docs) {
     if (!canEdit) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You need Editor or Owner permissions to edit data.')),
+        const SnackBar(
+            content: Text('You need Editor or Owner permissions to edit data.')),
       );
       return;
     }
@@ -318,7 +300,8 @@ class _MonitoringPageState extends State<MonitoringPage>
 
       for (var p in points) {
         String initialValue = pointValues[p]?.toString() ?? '';
-        groupControllers[doc.id]![p] = TextEditingController(text: initialValue);
+        groupControllers[doc.id]![p] =
+            TextEditingController(text: initialValue);
       }
     }
 
@@ -338,7 +321,9 @@ class _MonitoringPageState extends State<MonitoringPage>
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("$label ($unit)", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                  Text("$label ($unit)",
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, color: Colors.blue)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 10,
@@ -353,7 +338,8 @@ class _MonitoringPageState extends State<MonitoringPage>
                           style: const TextStyle(fontSize: 13),
                           decoration: InputDecoration(
                             labelText: p,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 8),
                             border: const OutlineInputBorder(),
                             isDense: true,
                           ),
@@ -405,10 +391,11 @@ class _MonitoringPageState extends State<MonitoringPage>
                     });
                   }
                 }
-                
+
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Points updated & Average recalculated")),
+                  const SnackBar(
+                      content: Text("Points updated & Average recalculated")),
                 );
 
                 try {
@@ -429,30 +416,17 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
-  String _getTabTitle(int index) {
-    switch (index) {
-      case 0: return "Daily Monitoring";
-      case 1: return "Weekly Analysis";
-      case 2: return "Biweekly Report";
-      default: return "";
-    }
-  }
-
   Widget _buildOverlayContent(int index) {
-    List<Map<String, dynamic>> parameters;
-    switch (index) {
-      case 0: parameters = _dailyParameters; break;
-      case 1: parameters = _weeklyParameters; break;
-      case 2: parameters = _biweeklyParameters; break;
-      default: return const Text("Select a tab to add data.");
-    }
+    List<Map<String, dynamic>> parameters =
+        MonitoringParameters.getParametersByIndex(index);
+    if (parameters.isEmpty) return const Text("Select a tab to add data.");
 
     double screenWidth = MediaQuery.of(context).size.width;
     int crossAxisCount = 2;
     double padding = 32.0;
     double spacing = 10.0;
     double itemWidth = (screenWidth - padding - spacing) / crossAxisCount;
-    double itemHeight = 75.0; 
+    double itemHeight = 75.0;
     double childAspectRatio = itemWidth / itemHeight;
 
     return GridView.builder(
@@ -462,7 +436,7 @@ class _MonitoringPageState extends State<MonitoringPage>
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: spacing,
         mainAxisSpacing: spacing,
-        childAspectRatio: childAspectRatio, 
+        childAspectRatio: childAspectRatio,
       ),
       itemCount: parameters.length,
       itemBuilder: (context, i) {
@@ -481,9 +455,10 @@ class _MonitoringPageState extends State<MonitoringPage>
                     Expanded(
                       child: Text(
                         param['label'] as String,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
-                        maxLines: 2, 
+                        maxLines: 2,
                       ),
                     ),
                   ],
@@ -503,18 +478,23 @@ class _MonitoringPageState extends State<MonitoringPage>
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
         bool hasPendingWrites = false;
-        
+
         if (snapshot.hasData) {
           hasPendingWrites = snapshot.data!.metadata.hasPendingWrites;
         }
 
         return Tooltip(
-          message: hasPendingWrites ? "Saving locally (Offline)" : "Synced to Cloud",
+          message:
+              hasPendingWrites ? "Saving locally (Offline)" : "Synced to Cloud",
           child: Row(
             children: [
               Icon(
-                hasPendingWrites ? Icons.cloud_upload_outlined : Icons.cloud_done_outlined,
-                color: hasPendingWrites ? Colors.orange[300] : Colors.lightGreenAccent,
+                hasPendingWrites
+                    ? Icons.cloud_upload_outlined
+                    : Icons.cloud_done_outlined,
+                color: hasPendingWrites
+                    ? Colors.orange[300]
+                    : Colors.lightGreenAccent,
                 size: 20,
               ),
               if (hasPendingWrites) ...[
@@ -531,16 +511,27 @@ class _MonitoringPageState extends State<MonitoringPage>
     );
   }
 
+  Widget _buildStatusDot(Color color) {
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    const Color customBlue = Color(0xFF0077C2); 
+    const Color customBlue = Color(0xFF0077C2);
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
         children: [
           Container(
-            height: 200, 
+            height: 200,
             decoration: const BoxDecoration(
               color: customBlue,
               borderRadius: BorderRadius.only(
@@ -549,16 +540,15 @@ class _MonitoringPageState extends State<MonitoringPage>
               ),
             ),
           ),
-
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
                   child: Row(
                     children: [
-                      // Added back button to return to Dashboard
                       IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
@@ -569,10 +559,10 @@ class _MonitoringPageState extends State<MonitoringPage>
                           color: Colors.white.withOpacity(0.2),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.waves, color: Colors.white, size: 24),
+                        child: const Icon(Icons.waves,
+                            color: Colors.white, size: 24),
                       ),
                       const SizedBox(width: 12),
-                      
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -584,21 +574,21 @@ class _MonitoringPageState extends State<MonitoringPage>
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          _buildSyncStatus(), 
+                          _buildSyncStatus(),
                         ],
                       ),
                       const Spacer(),
-                      
                       GestureDetector(
                         onTap: () => _showProfileSheet(context),
-                        child: const Icon(Icons.person_outline, color: Colors.white, size: 30),
+                        child: const Icon(Icons.person_outline,
+                            color: Colors.white, size: 30),
                       ),
                     ],
                   ),
                 ),
-
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20.0, vertical: 5),
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -610,20 +600,20 @@ class _MonitoringPageState extends State<MonitoringPage>
                       children: [
                         const Text(
                           "Monitoring",
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          widget.pondName, // UPDATED: Displays the custom Pond Name
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          widget.pondName,
+                          style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 15),
-
                 Expanded(
                   child: SingleChildScrollView(
                     child: Padding(
@@ -632,122 +622,39 @@ class _MonitoringPageState extends State<MonitoringPage>
                         children: [
                           Card(
                             elevation: 4,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
                             child: Padding(
                               padding: const EdgeInsets.all(8.0),
                               child: Column(
                                 children: [
-                                  StreamBuilder<QuerySnapshot>(
-                                    stream: FirestoreHelper.measurementsCollection
-                                        // UPDATED: Querying by pondId
-                                        .where('pondId', isEqualTo: widget.pondId)
-                                        .snapshots(includeMetadataChanges: true), 
-                                    builder: (context, snapshot) {
-                                      Map<DateTime, Set<String>> eventsMap = {};
-                                      
-                                      if (snapshot.hasData) {
-                                        for (var doc in snapshot.data!.docs) {
-                                          final data = doc.data() as Map<String, dynamic>;
-                                          final timestamp = data['timestamp'] as Timestamp?;
-                                          final type = data['type'] as String?;
-
-                                          if (timestamp != null && type != null) {
-                                            final date = timestamp.toDate();
-                                            final normalizedDate = DateTime.utc(
-                                                date.year, date.month, date.day);
-                                            
-                                            if (!eventsMap.containsKey(normalizedDate)) {
-                                              eventsMap[normalizedDate] = {};
-                                            }
-                                            eventsMap[normalizedDate]!.add(type);
-                                          }
-                                        }
-                                      }
-
-                                      return TableCalendar(
-                                        firstDay: DateTime.utc(2020, 1, 1),
-                                        lastDay: DateTime.utc(2030, 12, 31),
-                                        focusedDay: _focusedDay,
-                                        availableCalendarFormats: const {
-                                          CalendarFormat.month: 'Month'
-                                        },
-                                        headerStyle: const HeaderStyle(
-                                          titleCentered: false,
-                                          formatButtonVisible: false,
-                                          titleTextStyle: TextStyle(
-                                              fontSize: 16, fontWeight: FontWeight.bold),
-                                        ),
-                                        calendarStyle: const CalendarStyle(
-                                          cellMargin: EdgeInsets.all(8),
-                                          selectedDecoration: BoxDecoration(
-                                            color: Color(0xFF0077C2), 
-                                            shape: BoxShape.circle,
-                                          ),
-                                          todayDecoration: BoxDecoration(
-                                            color: Colors.blueAccent,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        selectedDayPredicate: (day) =>
-                                            isSameDay(_selectedDay, day),
-                                        onDaySelected: (selectedDay, focusedDay) {
-                                          setState(() {
-                                            _selectedDay = DateTime.utc(
-                                                selectedDay.year,
-                                                selectedDay.month,
-                                                selectedDay.day);
-                                            _focusedDay = focusedDay;
-                                          });
-                                        },
-                                        calendarBuilders: CalendarBuilders(
-                                          markerBuilder: (context, date, events) {
-                                            final normalizedDate = DateTime.utc(
-                                                date.year, date.month, date.day);
-                                            final types = eventsMap[normalizedDate] ?? {};
-
-                                            final hasDaily = types.contains('daily');
-                                            final hasWeekly = types.contains('weekly');
-                                            final hasBiweekly = types.contains('biweekly');
-
-                                            List<Widget> activeDots = [];
-                                            
-                                            if (hasDaily) {
-                                              activeDots.add(_buildStatusDot(Colors.green));
-                                            }
-                                            if (hasWeekly) {
-                                              activeDots.add(_buildStatusDot(Colors.amber));
-                                            }
-                                            if (hasBiweekly) {
-                                              activeDots.add(_buildStatusDot(Colors.blue));
-                                            }
-
-                                            return Positioned(
-                                              bottom: 1,
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: activeDots
-                                                    .map((dot) => Padding(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 1.0),
-                                                          child: dot,
-                                                        ))
-                                                    .toList(),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      );
+                                  MonitoringCalendar(
+                                    pondId: widget.pondId,
+                                    focusedDay: _focusedDay,
+                                    selectedDay: _selectedDay,
+                                    onDaySelected: (selectedDay, focusedDay) {
+                                      setState(() {
+                                        _selectedDay = DateTime.utc(
+                                            selectedDay.year,
+                                            selectedDay.month,
+                                            selectedDay.day);
+                                        _focusedDay = focusedDay;
+                                      });
                                     },
                                   ),
                                   const Divider(),
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 8.0, horizontal: 16.0),
                                     child: Row(
                                       children: const [
-                                        Icon(Icons.circle, color: Colors.blueAccent, size: 12),
+                                        Icon(Icons.circle,
+                                            color: Colors.blueAccent, size: 12),
                                         SizedBox(width: 8),
                                         Text(
                                           "Dates with records",
-                                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                                          style: TextStyle(
+                                              color: Colors.grey, fontSize: 12),
                                         ),
                                       ],
                                     ),
@@ -756,25 +663,23 @@ class _MonitoringPageState extends State<MonitoringPage>
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 20),
-
                           Container(
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(50), 
+                              borderRadius: BorderRadius.circular(50),
                             ),
                             child: TabBar(
                               controller: _tabController,
                               indicator: BoxDecoration(
-                                color: const Color(0xFF0077C2), 
-                                borderRadius: BorderRadius.circular(50), 
+                                color: const Color(0xFF0077C2),
+                                borderRadius: BorderRadius.circular(50),
                               ),
-                              indicatorSize: TabBarIndicatorSize.tab, 
+                              indicatorSize: TabBarIndicatorSize.tab,
                               labelColor: Colors.white,
                               unselectedLabelColor: Colors.grey,
                               dividerColor: Colors.transparent,
-                              labelPadding: EdgeInsets.zero, 
+                              labelPadding: EdgeInsets.zero,
                               tabs: [
                                 Tab(
                                   child: Row(
@@ -809,11 +714,9 @@ class _MonitoringPageState extends State<MonitoringPage>
                               ],
                             ),
                           ),
-                          
                           const SizedBox(height: 10),
-
                           SizedBox(
-                            height: 400, 
+                            height: 400,
                             child: TabBarView(
                               controller: _tabController,
                               children: [
@@ -833,13 +736,14 @@ class _MonitoringPageState extends State<MonitoringPage>
           ),
         ],
       ),
-      // Hide the floating action button if the user is a viewer
-      floatingActionButton: canEdit ? FloatingActionButton(
-        backgroundColor: customBlue,
-        shape: const CircleBorder(),
-        onPressed: _showAddDataOverlay,
-        child: const Icon(Icons.add, color: Colors.white, size: 30),
-      ) : null,
+      floatingActionButton: canEdit
+          ? FloatingActionButton(
+              backgroundColor: customBlue,
+              shape: const CircleBorder(),
+              onPressed: _showAddDataOverlay,
+              child: const Icon(Icons.add, color: Colors.white, size: 30),
+            )
+          : null,
     );
   }
 
@@ -848,25 +752,31 @@ class _MonitoringPageState extends State<MonitoringPage>
       return const Center(child: Text("Select a date to view data"));
     }
 
-    final String dateKey = "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
+    final String dateKey =
+        "${_selectedDay!.year}-${_selectedDay!.month}-${_selectedDay!.day}";
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirestoreHelper.measurementsCollection
-          // UPDATED: Querying by pondId
           .where('pondId', isEqualTo: widget.pondId)
           .where('type', isEqualTo: type)
           .where('dateKey', isEqualTo: dateKey)
-          .orderBy('recordedAt', descending: true) 
+          .orderBy('recordedAt', descending: true)
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) {
+          return Center(child: Text("Error: ${snapshot.error}"));
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return Center(child: Text("No $type data for this date."));
+        if (docs.isEmpty) {
+          return Center(child: Text("No $type data for this date."));
+        }
 
         return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 80), 
+          padding: const EdgeInsets.only(top: 8, bottom: 80),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final doc = docs[index];
@@ -879,98 +789,17 @@ class _MonitoringPageState extends State<MonitoringPage>
             final title = "$parameter";
             final content = "$value $unit\n(Avg across recorded points)";
 
-            return _infoCard(time, title, content, [doc]);
+            return MeasurementCard(
+              time: time,
+              title: title,
+              content: content,
+              canEdit: canEdit,
+              groupDocs: [doc],
+              onEdit: () => _showEditDataDialog([doc]),
+            );
           },
         );
       },
-    );
-  }
-
-  Widget _infoCard(String time, String title, String content, List<QueryDocumentSnapshot> groupDocs) {
-    return SizedBox(
-      width: double.infinity,
-      child: Card(
-        elevation: 2,
-        margin: const EdgeInsets.only(bottom: 12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(time, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 8),
-                    Text(title, style: const TextStyle(fontSize: 14)),
-                    Text(content, style: const TextStyle(fontSize: 14)),
-                  ],
-                ),
-              ),
-              Column(
-                children: [
-                  // Only allow editors or owners to edit/delete
-                  if (canEdit) ...[
-                    IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.blue),
-                      onPressed: () {
-                        _showEditDataDialog(groupDocs); 
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _confirmGroupDelete(groupDocs),
-                    ),
-                  ]
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _confirmGroupDelete(List<QueryDocumentSnapshot> docs) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Data"),
-        content: const Text("Are you sure you want to delete this measurement?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(context); // Close dialog immediately
-              final batch = FirebaseFirestore.instance.batch();
-              for (var doc in docs) {
-                batch.delete(doc.reference); 
-              }
-              batch.commit(); // Fire and forget!
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Entry deleted")),
-              );
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusDot(Color color) {
-    return Container(
-      width: 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
     );
   }
 }
