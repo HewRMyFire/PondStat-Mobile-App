@@ -19,9 +19,9 @@ class MonitoringCalendar extends StatelessWidget {
 
   Widget _buildStatusDot(Color color) {
     return Container(
-      width: 6,
-      height: 6,
-      margin: const EdgeInsets.symmetric(horizontal: 1.0),
+      width: 5,
+      height: 5,
+      margin: const EdgeInsets.symmetric(horizontal: 1.5),
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
@@ -43,9 +43,7 @@ class MonitoringCalendar extends StatelessWidget {
 
             if (timestamp != null && type != null) {
               final date = timestamp.toDate();
-              final normalizedDate =
-                  DateTime.utc(date.year, date.month, date.day);
-
+              final normalizedDate = DateTime.utc(date.year, date.month, date.day);
               eventsMap.putIfAbsent(normalizedDate, () => {}).add(type);
             }
           }
@@ -56,26 +54,51 @@ class MonitoringCalendar extends StatelessWidget {
           lastDay: DateTime.utc(2030, 12, 31),
           focusedDay: focusedDay,
           availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+
           headerStyle: const HeaderStyle(
-            titleCentered: false,
+            titleCentered: true,
             formatButtonVisible: false,
-            titleTextStyle:
-                TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            titleTextStyle: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+            leftChevronIcon: Icon(Icons.chevron_left, color: Colors.black54),
+            rightChevronIcon: Icon(Icons.chevron_right, color: Colors.black54),
           ),
-          calendarStyle: const CalendarStyle(
-            cellMargin: EdgeInsets.all(8),
-            selectedDecoration:
-                BoxDecoration(color: Color(0xFF0077C2), shape: BoxShape.circle),
-            todayDecoration:
-                BoxDecoration(color: Colors.blueAccent, shape: BoxShape.circle),
+
+          calendarStyle: CalendarStyle(
+            cellMargin: const EdgeInsets.all(6),
+            outsideDaysVisible: false,
+            selectedDecoration: const BoxDecoration(
+              color: Color(0xFF0077C2),
+              shape: BoxShape.circle,
+            ),
+            todayDecoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF0077C2), width: 1.5),
+            ),
+            todayTextStyle: const TextStyle(
+              color: Color(0xFF0077C2),
+              fontWeight: FontWeight.bold,
+            ),
+            defaultTextStyle: const TextStyle(fontWeight: FontWeight.w500),
+            weekendTextStyle: TextStyle(
+              fontWeight: FontWeight.w500,
+              color: Colors.grey.shade700,
+            ),
           ),
+
           selectedDayPredicate: (day) => isSameDay(selectedDay, day),
           onDaySelected: onDaySelected,
+
           calendarBuilders: CalendarBuilders(
             markerBuilder: (context, date, events) {
-              final normalizedDate =
-                  DateTime.utc(date.year, date.month, date.day);
+              final normalizedDate = DateTime.utc(date.year, date.month, date.day);
               final types = eventsMap[normalizedDate] ?? {};
+
+              if (types.isEmpty) return const SizedBox();
 
               List<Widget> activeDots = [];
               if (types.contains('daily')) {
@@ -89,7 +112,7 @@ class MonitoringCalendar extends StatelessWidget {
               }
 
               return Positioned(
-                bottom: 1,
+                bottom: 6,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: activeDots,
