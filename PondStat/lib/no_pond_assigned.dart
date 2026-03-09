@@ -1,115 +1,205 @@
 import 'package:flutter/material.dart';
 
-class NoPondAssignedWidget extends StatelessWidget {
-  const NoPondAssignedWidget({super.key});
+class NoPondAssignedWidget extends StatefulWidget {
+  final Future<void> Function()? onRefresh;
+
+  const NoPondAssignedWidget({
+    super.key,
+    this.onRefresh,
+  });
+
+  @override
+  State<NoPondAssignedWidget> createState() => _NoPondAssignedWidgetState();
+}
+
+class _NoPondAssignedWidgetState extends State<NoPondAssignedWidget> {
+  bool _isRefreshing = false;
+
+  Future<void> _handleRefresh() async {
+    if (widget.onRefresh == null || _isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+
+    try {
+      await widget.onRefresh!();
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-      width: double.infinity,
-      color: Colors.white, // Ensure background is white
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const SizedBox(height: 40), // Add some space from the AppBar
-          
-          // Icon with circular background
-          CircleAvatar(
-            radius: 40,
-            backgroundColor: const Color(0xFFE3F2FD), // Light blue background
-            child: Icon(
-              Icons.waves,
-              color: Theme.of(context).colorScheme.primary,
-              size: 45,
-            ),
-          ),
-          const SizedBox(height: 24),
+    final primaryColor = Theme.of(context).primaryColor;
 
-          // "No Pond Assigned" text is red
-          Row(
+    return RefreshIndicator(
+      onRefresh: _handleRefresh,
+      color: primaryColor,
+      child: Center(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 24.0,
+            vertical: 32.0,
+          ),
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, color: Colors.red[700], size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'No Pond Assigned',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.red[700],
+              Container(
+                height: 160,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: primaryColor.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: primaryColor.withOpacity(0.1),
+                    width: 2,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.water_drop_outlined,
+                      size: 48,
+                      color: primaryColor.withOpacity(0.4),
+                    ),
+                    const SizedBox(height: 12),
+                    Icon(
+                      Icons.search_rounded,
+                      size: 32,
+                      color: primaryColor.withOpacity(0.3),
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 32),
+              const Text(
+                'Waiting for Assignment',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "You haven't been assigned to a pond yet. You can create one or ask your team leader to invite you.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 32),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Once assigned, you\'ll have access to:',
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 16.0,
+                      runSpacing: 12.0,
+                      children: [
+                        _buildRecordItem(
+                          primaryColor,
+                          'Daily records',
+                        ),
+                        _buildRecordItem(
+                          primaryColor,
+                          'Biweekly records',
+                        ),
+                        _buildRecordItem(
+                          primaryColor,
+                          'Weekly records',
+                        ),
+                        _buildRecordItem(
+                          primaryColor,
+                          'Team dashboard',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 40),
+              if (widget.onRefresh != null)
+                OutlinedButton.icon(
+                  onPressed: _isRefreshing ? null : _handleRefresh,
+                  icon: _isRefreshing
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: primaryColor,
+                          ),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(
+                    _isRefreshing ? "Refreshing..." : "Refresh Status",
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: primaryColor,
+                    side: BorderSide(
+                      color: primaryColor.withOpacity(0.5),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 12),
-
-          // Underlined, blue helper text (not in a box)
-          const Text(
-            "You haven't been assigned a pond yet. Please contact your team leader to get access to pond monitoring.",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Color(0xFF0A7ABF),
-              fontSize: 14,
-              decoration: TextDecoration.underline,
-              decorationColor: Color(0xFF0A7ABF),
-              decorationThickness: 1.5,
-            ),
-          ),
-          const SizedBox(height: 32),
-
-          // "Keep track of" box with reddish theme
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.red[50], // Light red background
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red[100]!),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Once assigned, you\'ll be able to keep track of:',
-                  style: TextStyle(color: Colors.black54, fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(child: _buildRecordItem('Daily records')),
-                    Expanded(child: _buildRecordItem('Biweekly records')),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(child: _buildRecordItem('Weekly records')),
-                    Expanded(child: _buildRecordItem('Feeding records')),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildRecordItem(String text) {
+  Widget _buildRecordItem(Color color, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 7,
-          height: 7,
-          decoration: const BoxDecoration(
-            color: Colors.blue, // Using blue bullets as in the mockup
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.6),
             shape: BoxShape.circle,
           ),
         ),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(color: Colors.black87, fontSize: 14)),
+        Text(
+          text,
+          style: TextStyle(
+            color: Colors.grey.shade700,
+            fontSize: 13,
+          ),
+        ),
       ],
     );
   }
