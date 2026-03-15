@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../firebase/firestore_helper.dart';
+import '../utility/helpers.dart';
 
 class ManageCollaboratorsPage extends StatefulWidget {
   final String pondId;
@@ -50,16 +51,6 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
     };
   }
 
-  String _getInitials(String name) {
-    if (name.isEmpty || name == 'Unknown User') return '?';
-
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length > 1) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return parts[0][0].toUpperCase();
-  }
-
   Future<void> _inviteCollaborator() async {
     final email = _emailController.text.trim().toLowerCase();
 
@@ -67,13 +58,7 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
       r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
     );
     if (email.isEmpty || !emailRegex.hasMatch(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid email address.'),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      SnackbarHelper.show(context, 'Please enter a valid email address.', backgroundColor: Colors.orange);
       return;
     }
 
@@ -88,15 +73,7 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
 
       if (query.docs.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'User not found. They must sign up for PondStat first.',
-              ),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          SnackbarHelper.show(context, 'User not found. They must sign up for PondStat first.', backgroundColor: Colors.orange);
         }
         setState(() => _isAdding = false);
         return;
@@ -112,23 +89,11 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
 
       _emailController.clear();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Collaborator added successfully!'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, 'Collaborator added successfully!', backgroundColor: Colors.green);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error adding collaborator: $e'),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, 'Error adding collaborator: $e', backgroundColor: Colors.redAccent);
       }
     } finally {
       if (mounted) setState(() => _isAdding = false);
@@ -208,9 +173,7 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update role: $e')),
-        );
+        SnackbarHelper.show(context, 'Failed to update role: $e');
       }
     }
   }
@@ -331,155 +294,12 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
                       final role = roles[userId] as String;
                       final isMe = userId == currentUserId;
 
-                      return FutureBuilder<Map<String, dynamic>>(
-                        future: _getUserData(userId),
-                        builder: (context, userSnap) {
-                          if (userSnap.connectionState ==
-                              ConnectionState.waiting) {
-                            return Card(
-                              elevation: 0,
-                              margin: const EdgeInsets.only(bottom: 8),
-                              color: colorScheme.surface,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: theme.dividerColor,
-                                ),
-                              ),
-                              child: const ListTile(
-                                leading: CircularProgressIndicator(),
-                                title: Text('Loading user...'),
-                              ),
-                            );
-                          }
-
-                          String name = 'Unknown User';
-                          String email = '';
-
-                          if (userSnap.hasData) {
-                            name = userSnap.data!['fullName'] ?? 'Unknown User';
-                            email = userSnap.data!['email'] ?? '';
-                          }
-
-                          return Card(
-                            elevation: 0,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            color: colorScheme.surface,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(
-                                color: theme.dividerColor,
-                              ),
-                            ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              leading: CircleAvatar(
-                                backgroundColor: isMe
-                                    ? colorScheme.primary
-                                    : colorScheme.primaryContainer,
-                                child: Text(
-                                  _getInitials(name),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: isMe
-                                        ? colorScheme.onPrimary
-                                        : colorScheme.onPrimaryContainer,
-                                  ),
-                                ),
-                              ),
-                              title: Text(
-                                isMe ? "$name (You)" : name,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: colorScheme.onSurface,
-                                ),
-                              ),
-                              subtitle: Text(
-                                email,
-                                style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              trailing: isMe
-                                  ? Tooltip(
-                                      message:
-                                          'You cannot change your own role',
-                                      triggerMode: TooltipTriggerMode.tap,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(20),
-                                          border: Border.all(
-                                            color:
-                                                Colors.green.withOpacity(0.3),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          role.toUpperCase(),
-                                          style: const TextStyle(
-                                            color: Colors.green,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  : DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: role,
-                                        icon: Icon(
-                                          Icons.expand_more,
-                                          size: 20,
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
-                                        dropdownColor: colorScheme.surface,
-                                        style: TextStyle(
-                                          color: colorScheme.onSurface,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                        ),
-                                        items: [
-                                          const DropdownMenuItem(
-                                            value: 'viewer',
-                                            child: Text('Viewer'),
-                                          ),
-                                          const DropdownMenuItem(
-                                            value: 'editor',
-                                            child: Text('Editor'),
-                                          ),
-                                          const DropdownMenuItem(
-                                            value: 'owner',
-                                            child: Text('Owner'),
-                                          ),
-                                          DropdownMenuItem(
-                                            value: 'remove',
-                                            child: Text(
-                                              'Remove access',
-                                              style: TextStyle(
-                                                color: colorScheme.error,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                        onChanged: (newRole) {
-                                          if (newRole != null) {
-                                            _handleRoleChange(userId, newRole);
-                                          }
-                                        },
-                                      ),
-                                    ),
-                            ),
-                          );
-                        },
+                      return CollaboratorTile(
+                        userId: userId,
+                        role: role,
+                        isMe: isMe,
+                        onRoleChange: _handleRoleChange,
+                        fetchUser: _getUserData,
                       );
                     },
                   );
@@ -488,6 +308,187 @@ class _ManageCollaboratorsPageState extends State<ManageCollaboratorsPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class CollaboratorTile extends StatefulWidget {
+  final String userId;
+  final String role;
+  final bool isMe;
+  final Function(String, String) onRoleChange;
+  final Future<Map<String, dynamic>> Function(String) fetchUser;
+
+  const CollaboratorTile({
+    super.key,
+    required this.userId,
+    required this.role,
+    required this.isMe,
+    required this.onRoleChange,
+    required this.fetchUser,
+  });
+
+  @override
+  State<CollaboratorTile> createState() => _CollaboratorTileState();
+}
+
+class _CollaboratorTileState extends State<CollaboratorTile> {
+  Map<String, dynamic>? userData;
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    final data = await widget.fetchUser(widget.userId);
+    if (mounted) {
+      setState(() {
+        userData = data;
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    if (isLoading) {
+      return Card(
+        elevation: 0,
+        margin: const EdgeInsets.only(bottom: 8),
+        color: colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: theme.dividerColor),
+        ),
+        child: const ListTile(
+          leading: CircularProgressIndicator(),
+          title: Text('Loading user...'),
+        ),
+      );
+    }
+
+    final name = userData?['fullName'] ?? 'Unknown User';
+    final email = userData?['email'] ?? '';
+    final initials = StringUtils.getInitials(name);
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      color: colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.dividerColor),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 8,
+        ),
+        leading: CircleAvatar(
+          backgroundColor: widget.isMe
+              ? colorScheme.primary
+              : colorScheme.primaryContainer,
+          child: Text(
+            initials,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: widget.isMe
+                  ? colorScheme.onPrimary
+                  : colorScheme.onPrimaryContainer,
+            ),
+          ),
+        ),
+        title: Text(
+          widget.isMe ? "$name (You)" : name,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        subtitle: Text(
+          email,
+          style: TextStyle(
+            color: colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
+        ),
+        trailing: widget.isMe
+            ? Tooltip(
+                message: 'You cannot change your own role',
+                triggerMode: TooltipTriggerMode.tap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.green.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Text(
+                    widget.role.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              )
+            : DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: widget.role,
+                  icon: Icon(
+                    Icons.expand_more,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  dropdownColor: colorScheme.surface,
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'viewer',
+                      child: Text('Viewer'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'editor',
+                      child: Text('Editor'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'owner',
+                      child: Text('Owner'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'remove',
+                      child: Text(
+                        'Remove access',
+                        style: TextStyle(
+                          color: colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (newRole) {
+                    if (newRole != null) {
+                      widget.onRoleChange(widget.userId, newRole);
+                    }
+                  },
+                ),
+              ),
       ),
     );
   }

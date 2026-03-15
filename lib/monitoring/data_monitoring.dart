@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../profile/profile_bottom_sheet.dart';
 import '../firebase/firestore_helper.dart';
-import 'monitoring_parameters.dart';
+import '../utility/helpers.dart';
+import 'record_data_sheet.dart';
 import 'measurement_card.dart';
 import 'monitoring_calendar.dart';
 import '../pond_background.dart';
@@ -108,20 +109,12 @@ class _MonitoringPageState extends State<MonitoringPage>
 
   void _showAddDataOverlay() {
     if (!canEdit) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You need Editor or Owner permissions to add data.'),
-        ),
-      );
+      SnackbarHelper.show(context, 'You need Editor or Owner permissions to add data.');
       return;
     }
 
     if (_selectedDay == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a day on the calendar first.'),
-        ),
-      );
+      SnackbarHelper.show(context, 'Please select a day on the calendar first.');
       return;
     }
 
@@ -133,348 +126,11 @@ class _MonitoringPageState extends State<MonitoringPage>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (BuildContext context) {
-        ParameterItem? selectedParameter;
-        TimeOfDay? selectedTime = TimeOfDay.now();
-        final List<String> points = const ['A', 'B', 'C', 'D'];
-        Map<String, TextEditingController> valueControllers = {
-          for (var p in points) p: TextEditingController()
-        };
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                top: 24,
-                left: 20,
-                right: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (selectedParameter != null)
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back),
-                            padding: EdgeInsets.zero,
-                            alignment: Alignment.centerLeft,
-                            onPressed: () => setSheetState(
-                                () => selectedParameter = null),
-                          ),
-                        Expanded(
-                          child: Text(
-                            selectedParameter == null
-                                ? "Select Parameter"
-                                : "Record ${selectedParameter!.label}",
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.grey),
-                          onPressed: () => Navigator.pop(context),
-                        )
-                      ],
-                    ),
-                    const Divider(height: 24),
-                    if (selectedParameter == null)
-                      _buildParameterGrid((param) {
-                        setSheetState(() => selectedParameter = param);
-                      })
-                    else
-                      _buildInputForm(
-                        parameter: selectedParameter!,
-                        selectedTime: selectedTime!,
-                        points: points,
-                        controllers: valueControllers,
-                        onTimeChanged: (newTime) =>
-                            setSheetState(() => selectedTime = newTime),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
+        return RecordDataSheet(
+          tabIndex: _tabController.index,
+          onSave: _saveDataToFirestore,
         );
       },
-    );
-  }
-
-  Widget _buildParameterGrid(Function(ParameterItem) onSelect) {
-    List<ParameterItem> parameters = MonitoringParameters.getParametersByIndex(
-      _tabController.index,
-    );
-
-    if (parameters.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(20),
-        child: Text("No parameters for this tab."),
-      );
-    }
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 2.5,
-      ),
-      itemCount: parameters.length,
-      itemBuilder: (context, i) {
-        final param = parameters[i];
-        return InkWell(
-          onTap: () => onSelect(param),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(12),
-              color: Colors.white,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Icon(
-                  param.icon,
-                  color: param.color,
-                  size: 24,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    param.label,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildInputForm({
-    required ParameterItem parameter,
-    required TimeOfDay selectedTime,
-    required List<String> points,
-    required Map<String, TextEditingController> controllers,
-    required Function(TimeOfDay) onTimeChanged,
-  }) {
-    String rangeText = '';
-    if (parameter.minVal != null && parameter.maxVal != null) {
-      rangeText = 'Range: ${parameter.minVal} - ${parameter.maxVal}';
-    } else if (parameter.minVal != null) {
-      rangeText = 'Min: ${parameter.minVal}';
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        InkWell(
-          onTap: () async {
-            final picked = await showTimePicker(
-              context: context,
-              initialTime: selectedTime,
-            );
-            if (picked != null) onTimeChanged(picked);
-          },
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.access_time, color: Colors.blue),
-                    const SizedBox(width: 12),
-                    Text(
-                      "Time: ${selectedTime.format(context)}",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                const Text(
-                  "Change",
-                  style: TextStyle(
-                    color: Colors.blue,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              "Enter values per point ${parameter.unit.isNotEmpty ? '(${parameter.unit})' : ''}:",
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            if (rangeText.isNotEmpty)
-              Text(
-                rangeText,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: points
-              .map(
-                (p) => Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: TextField(
-                      controller: controllers[p],
-                      keyboardType: parameter.keyboardType,
-                      textAlign: TextAlign.center,
-                      textInputAction: p == points.last
-                          ? TextInputAction.done
-                          : TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: "Pt $p",
-                        hintText: parameter.hint.split(' ').last,
-                        hintStyle: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 13,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 32),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            backgroundColor: customBlue,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          onPressed: () => _processAndSaveForm(
-            parameter,
-            selectedTime,
-            points,
-            controllers,
-          ),
-          child: const Text(
-            "Save Measurement",
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        )
-      ],
-    );
-  }
-
-  void _processAndSaveForm(
-    ParameterItem parameter,
-    TimeOfDay time,
-    List<String> points,
-    Map<String, TextEditingController> controllers,
-  ) {
-    double sum = 0;
-    int count = 0;
-    Map<String, double> pointValues = {};
-
-    for (var p in points) {
-      final textVal = controllers[p]!.text.trim();
-      if (textVal.isNotEmpty) {
-        final val = double.tryParse(textVal);
-
-        if (val == null &&
-            parameter.keyboardType != TextInputType.text) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Point $p has an invalid number")),
-          );
-          return;
-        }
-
-        if (val != null) {
-          if (parameter.minVal != null && val < parameter.minVal!) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                    "Point $p is below the minimum (${parameter.minVal})"),
-              ),
-            );
-            return;
-          }
-          if (parameter.maxVal != null && val > parameter.maxVal!) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                    "Point $p is above the maximum (${parameter.maxVal})"),
-              ),
-            );
-            return;
-          }
-
-          sum += val;
-          count++;
-          pointValues[p] = val;
-        }
-      }
-    }
-
-    if (count == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("Please enter at least one valid value")),
-      );
-      return;
-    }
-
-    double avg = double.parse((sum / count).toStringAsFixed(2));
-    String type = ['daily', 'weekly', 'biweekly'][_tabController.index];
-
-    _saveDataToFirestore(
-      label: parameter.label,
-      unit: parameter.unit,
-      timeString: time.format(context),
-      averageValue: avg,
-      type: type,
-      pointValues: pointValues,
-    );
-
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Saved ${parameter.label}: $avg ${parameter.unit}"),
-      ),
     );
   }
 
@@ -595,16 +251,12 @@ class _MonitoringPageState extends State<MonitoringPage>
                 }
 
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Measurements updated")),
-                );
+                SnackbarHelper.show(context, "Measurements updated");
                 try {
                   await batch.commit();
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Error: $e")),
-                    );
+                    SnackbarHelper.show(context, "Error: $e");
                   }
                 }
               },

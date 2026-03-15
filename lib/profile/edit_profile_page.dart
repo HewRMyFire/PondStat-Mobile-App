@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../firebase/firestore_helper.dart';
+import '../utility/helpers.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -32,16 +33,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _nameController.dispose();
     _studentNumController.dispose();
     super.dispose();
-  }
-
-  String _getInitials(String name) {
-    if (name.isEmpty || name == 'Unknown User') return '?';
-
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length > 1) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return parts[0][0].toUpperCase();
   }
 
   Future<void> _loadUserData() async {
@@ -164,24 +155,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
           _initialStudentNum = _studentNumController.text.trim();
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile updated successfully!'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, 'Profile updated successfully!', backgroundColor: Colors.green);
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to update profile: $e"),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, "Failed to update profile: $e", backgroundColor: Colors.redAccent);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -241,7 +220,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         photoUrl != null ? NetworkImage(photoUrl) : null,
                     child: photoUrl == null
                         ? Text(
-                            _getInitials(displayName),
+                            StringUtils.getInitials(displayName),
                             style: TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
@@ -252,12 +231,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   ),
                   GestureDetector(
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Profile picture uploads coming soon!'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
+                      SnackbarHelper.show(context, 'Profile picture uploads coming soon!');
                     },
                     child: Container(
                       padding: const EdgeInsets.all(6),

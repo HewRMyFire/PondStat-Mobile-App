@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/firestore_helper.dart';
+import '../utility/helpers.dart';
 
 class CreatePondSheet extends StatefulWidget {
   const CreatePondSheet({super.key});
@@ -31,7 +32,7 @@ class _CreatePondSheetState extends State<CreatePondSheet> {
     super.dispose();
   }
 
-  void _createNewPond() async {
+  void _createNewPond() {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -49,7 +50,11 @@ class _CreatePondSheetState extends State<CreatePondSheet> {
     final pondArea = double.tryParse(_pondAreaController.text.trim()) ?? 0.0;
 
     try {
-      await FirestoreHelper.pondsCollection.add({
+      // Fire-and-forget: Create document ref and set data without awaiting.
+      // Firestore instantly caches this locally (updating UI) and syncs to server in background.
+      final newPondRef = FirestoreHelper.pondsCollection.doc();
+      
+      newPondRef.set({
         'name': pondName,
         'species': species.isNotEmpty ? species : 'Unspecified',
         'stockingQuantity': quantity,
@@ -59,28 +64,18 @@ class _CreatePondSheetState extends State<CreatePondSheet> {
         'ownerId': user.uid,
         'memberIds': [user.uid],
         'roles': {user.uid: 'owner'},
+      }).catchError((error) {
+        debugPrint("Background sync error: $error");
       });
 
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pond setup complete!'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, 'Pond setup complete!', backgroundColor: Colors.green);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to create pond: $e'),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, 'Failed to create pond: $e', backgroundColor: Colors.redAccent);
       }
     }
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utility/helpers.dart';
 
 class MeasurementCard extends StatelessWidget {
   final String time;
@@ -52,9 +53,7 @@ class MeasurementCard extends StatelessWidget {
                 batch.delete(doc.reference);
               }
               batch.commit();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Entry deleted successfully")),
-              );
+              SnackbarHelper.show(context, "Entry deleted successfully");
             },
             child: const Text("Delete"),
           ),

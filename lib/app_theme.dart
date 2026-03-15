@@ -61,6 +61,19 @@ class AppTheme {
     error: Colors.redAccent.shade200,
   );
 
+  // Cached Theme Extensions to prevent unnecessary recreation
+  static final _lightPondColors = PondStatusColors(
+    healthy: Colors.green.shade600,
+    warning: Colors.orange.shade600,
+    critical: Colors.red.shade600,
+  );
+
+  static final _darkPondColors = PondStatusColors(
+    healthy: Colors.green.shade400,
+    warning: Colors.orange.shade300,
+    critical: Colors.red.shade400,
+  );
+
   static ThemeData get lightTheme {
     return _buildTheme(
       colorScheme: _lightColorScheme,
@@ -85,11 +98,7 @@ class AppTheme {
       scaffoldBackgroundColor: colorScheme.surface,
       splashFactory: InkSparkle.splashFactory,
       extensions: <ThemeExtension<dynamic>>[
-        PondStatusColors(
-          healthy: isDark ? Colors.green.shade400 : Colors.green.shade600,
-          warning: isDark ? Colors.orange.shade300 : Colors.orange.shade600,
-          critical: isDark ? Colors.red.shade400 : Colors.red.shade600,
-        ),
+        isDark ? _darkPondColors : _lightPondColors,
       ],
       appBarTheme: AppBarTheme(
         backgroundColor: isDark ? colorScheme.surface : colorScheme.primary,

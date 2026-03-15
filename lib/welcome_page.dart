@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'firebase/firestore_helper.dart';
+import 'utility/helpers.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -22,6 +23,10 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
   late Animation<double> _fadeAnimation;
 
   bool _isLoading = false;
+
+  final GoogleSignIn googleSignIn = GoogleSignIn(
+        clientId: '624574025589-5390binsi9sh8plk6ii0h929dtq63dvu.apps.googleusercontent.com',
+      );
 
   @override
   void initState() {
@@ -71,9 +76,6 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
     setState(() => _isLoading = true);
 
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        clientId: '624574025589-5390binsi9sh8plk6ii0h929dtq63dvu.apps.googleusercontent.com',
-      );
 
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
@@ -145,13 +147,7 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
           }
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.show(context, errorMessage, backgroundColor: Colors.redAccent);
       }
     }
   }
