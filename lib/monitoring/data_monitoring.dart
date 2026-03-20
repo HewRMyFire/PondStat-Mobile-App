@@ -107,6 +107,17 @@ class _MonitoringPageState extends State<MonitoringPage>
     });
   }
 
+  void _showEditHistory(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) {
+      return const EditHistorySheet(pondId: '',); // create this widget
+    },
+  );
+}
+
   void _showAddDataOverlay() {
     if (!canEdit) {
       SnackbarHelper.show(context, 'You need Editor or Owner permissions to add data.');
@@ -135,138 +146,168 @@ class _MonitoringPageState extends State<MonitoringPage>
   }
 
   void _showEditDataDialog(List<QueryDocumentSnapshot> docs) {
-    if (!canEdit) return;
+  if (!canEdit) return;
 
-    final Map<String, Map<String, TextEditingController>> groupControllers = {};
-    final List<String> points = const ['A', 'B', 'C', 'D'];
+  final Map<String, Map<String, TextEditingController>> groupControllers = {};
+  final List<String> points = const ['A', 'B', 'C', 'D'];
 
-    for (var doc in docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final pointValues = data['pointValues'] as Map<String, dynamic>? ?? {};
-      groupControllers[doc.id] = {
-        for (var p in points)
-          p: TextEditingController(text: pointValues[p]?.toString() ?? '')
-      };
-    }
+  for (var doc in docs) {
+    final data = doc.data() as Map<String, dynamic>;
+    final pointValues = data['pointValues'] as Map<String, dynamic>? ?? {};
+    groupControllers[doc.id] = {
+      for (var p in points)
+        p: TextEditingController(text: pointValues[p]?.toString() ?? '')
+    };
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          scrollable: true,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Edit Measurements'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: docs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "${data['parameter']} (${data['unit'] ?? ''})",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: customBlue,
-                      ),
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        scrollable: true,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Edit Measurements'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "${data['parameter']} (${data['unit'] ?? ''})",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: customBlue,
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: points
-                          .map(
-                            (p) => Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                child: TextField(
-                                  controller: groupControllers[doc.id]![p],
-                                  keyboardType: const TextInputType
-                                      .numberWithOptions(decimal: true),
-                                  textAlign: TextAlign.center,
-                                  decoration: InputDecoration(
-                                    labelText: p,
-                                    isDense: true,
-                                    border: OutlineInputBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: points.map((p) {
+                      return Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: TextField(
+                            controller: groupControllers[doc.id]![p],
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            textAlign: TextAlign.center,
+                            decoration: InputDecoration(
+                              labelText: p,
+                              isDense: true,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                          )
-                          .toList(),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: customBlue,
-                foregroundColor: Colors.white,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
-              onPressed: () async {
-                final batch = FirebaseFirestore.instance.batch();
+            );
+          }).toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: customBlue,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final batch = FirebaseFirestore.instance.batch();
+              final user = FirebaseAuth.instance.currentUser;
 
-                for (var doc in docs) {
-                  final controllersMap = groupControllers[doc.id];
-                  if (controllersMap == null) continue;
+              for (var doc in docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                final controllersMap = groupControllers[doc.id];
+                if (controllersMap == null) continue;
 
-                  double sum = 0;
-                  int count = 0;
-                  Map<String, double> newPointValues = {};
+                // OLD DATA
+                final oldValue = data['value'];
+                final oldPoints = Map<String, dynamic>.from(
+                  data['pointValues'] ?? {},
+                );
 
-                  for (var p in points) {
-                    final text = controllersMap[p]?.text;
-                    if (text != null && text.isNotEmpty) {
-                      final val = double.tryParse(text);
-                      if (val != null) {
-                        sum += val;
-                        count++;
-                        newPointValues[p] = val;
-                      }
+                double sum = 0;
+                int count = 0;
+                Map<String, double> newPointValues = {};
+
+                for (var p in points) {
+                  final text = controllersMap[p]?.text;
+                  if (text != null && text.isNotEmpty) {
+                    final val = double.tryParse(text);
+                    if (val != null) {
+                      sum += val;
+                      count++;
+                      newPointValues[p] = val;
                     }
                   }
+                }
 
-                  if (count > 0) {
-                    double newAvg =
-                        double.parse((sum / count).toStringAsFixed(2));
-                    batch.update(doc.reference, {
-                      'pointValues': newPointValues,
+                if (count > 0) {
+                  double newAvg =
+                      double.parse((sum / count).toStringAsFixed(2));
+
+                  // UPDATE measurement
+                  batch.update(doc.reference, {
+                    'pointValues': newPointValues,
+                    'value': newAvg,
+                  });
+
+                  // HISTORY LOG
+                  final historyRef = FirebaseFirestore.instance
+                      .collection('measurement_history')
+                      .doc();
+
+                  batch.set(historyRef, {
+                    'pondId': widget.pondId,
+                    'measurementId': doc.id,
+                    'parameter': data['parameter'],
+                    'editedAt': FieldValue.serverTimestamp(),
+                    'editedBy': user?.uid,
+                    'editorName': user?.displayName ?? 'Unknown',
+                    'type': 'update',
+                    'before': {
+                      'value': oldValue,
+                      'pointValues': oldPoints,
+                    },
+                    'after': {
                       'value': newAvg,
-                    });
-                  }
+                      'pointValues': newPointValues,
+                    },
+                  });
                 }
+              }
 
-                Navigator.pop(context);
-                SnackbarHelper.show(context, "Measurements updated");
-                try {
-                  await batch.commit();
-                } catch (e) {
-                  if (mounted) {
-                    SnackbarHelper.show(context, "Error: $e");
-                  }
+              Navigator.pop(context);
+
+              try {
+                await batch.commit();
+                if (mounted) {
+                  SnackbarHelper.show(context, "Measurements updated");
                 }
-              },
-              child: const Text("Update"),
-            ),
-          ],
-        );
-      },
-    );
-  }
+              } catch (e) {
+                if (mounted) {
+                  SnackbarHelper.show(context, "Error: $e");
+                }
+              }
+            },
+            child: const Text("Update"),
+          ),
+        ],
+      );
+    },
+  );
+}
 
   Widget _buildSyncStatus() {
     return StreamBuilder<QuerySnapshot>(
@@ -369,6 +410,11 @@ class _MonitoringPageState extends State<MonitoringPage>
                               ],
                             ),
                             const Spacer(),
+                            IconButton(
+                              icon: const Icon(Icons.history, color: Colors.black),
+                              tooltip: 'Edit History (coming soon)',
+                              onPressed: () => _showEditHistory(context),
+                            ),
                             GestureDetector(
                               onTap: () => _showProfileSheet(context),
                               child: const Icon(
@@ -676,6 +722,126 @@ class _MonitoringPageState extends State<MonitoringPage>
             style: TextStyle(color: Colors.grey.shade500),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class EditHistorySheet extends StatelessWidget {
+  final String pondId;
+
+  const EditHistorySheet({super.key, required this.pondId});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox.expand(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Edit History",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              Expanded(
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('measurement_history')
+                      .where('pondId', isEqualTo: pondId)
+                      .orderBy('editedAt', descending: true)
+                      .limit(30)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text("Error: ${snapshot.error}"),
+                      );
+                    }
+
+                    final docs = snapshot.data?.docs ?? [];
+
+                    if (docs.isEmpty) {
+                      return const Center(child: Text("No history yet"));
+                    }
+
+                    return ListView.builder(
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final data = docs[index].data();
+
+                        final before = data['before'] ?? {};
+                        final after = data['after'] ?? {};
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  data['parameter'] ?? 'Unknown',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+
+                                Text(
+                                  "By: ${data['editorName'] ?? 'Unknown'}",
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+
+                                // Compute timestamp outside the Text widget
+                                Text(
+                                  data['editedAt'] != null
+                                      ? (data['editedAt'] as Timestamp).toDate().toString()
+                                      : '',
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                ),
+
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Before: ${before['value'] ?? '-'}",
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                                Text(
+                                  "After: ${after['value'] ?? '-'}",
+                                  style: const TextStyle(color: Colors.green),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

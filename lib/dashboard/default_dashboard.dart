@@ -125,6 +125,7 @@ class _DefaultDashboardScreenState extends State<DefaultDashboardScreen>
             tooltip: 'How it works',
             onPressed: () => GettingStartedDialog.showManual(context),
           ),
+
           IconButton(
             icon: const CircleAvatar(
               radius: 16,
