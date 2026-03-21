@@ -107,13 +107,13 @@ class _MonitoringPageState extends State<MonitoringPage>
     });
   }
 
-  void _showEditHistory(BuildContext context) {
+void _showEditHistory(BuildContext context) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) {
-      return const EditHistorySheet(pondId: '',); // create this widget
+      return EditHistorySheet(pondId: widget.pondId);
     },
   );
 }
