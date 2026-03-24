@@ -94,7 +94,7 @@ class _MonitoringPageState extends State<MonitoringPage>
       'measurementId': doc.id,
       'parameter': data['parameter'],
       'action': 'delete',
-      'editedAt': FieldValue.serverTimestamp(),
+      'editedAt': Timestamp.now(),
       'editedBy': user?.uid,
       'editorName': user?.displayName ?? 'Unknown',
       'before': data,
@@ -315,7 +315,7 @@ void _showEditHistory(BuildContext context) {
                   'pondId': widget.pondId,
                   'measurementId': doc.id,
                   'parameter': data['parameter'],
-                  'editedAt': FieldValue.serverTimestamp(),
+                  'editedAt': Timestamp.now(),
                   'editedBy': user?.uid,
                   'editorName': user?.displayName ?? 'Unknown',
                   'action': 'delete',
@@ -542,7 +542,7 @@ void _showEditHistory(BuildContext context) {
                             const Spacer(),
                             IconButton(
                               icon: const Icon(Icons.history, color: Colors.black),
-                              tooltip: 'Edit History (coming soon)',
+                              tooltip: 'Edit History',
                               onPressed: () => _showEditHistory(context),
                             ),
                             GestureDetector(
